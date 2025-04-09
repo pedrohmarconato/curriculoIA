@@ -19,12 +19,12 @@ import ProfileSection from './ProfileSection';
 import SystemSettings from './SystemSettings';
 import CreditsSection from './CreditsSection';
 import ActivityHistory from './ActivityHistory';
-import { useTheme } from '../../hooks/useTheme';
+import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 
 const UserArea = () => {
   const { resumeData, updateResumeData } = useResume();
-  const { theme, setTheme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
 
   const tabs = [
     { id: 'profile', label: 'Perfil', icon: User },
@@ -55,7 +55,7 @@ const UserArea = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
+        {/* Cabeçalho */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">
             Área do Usuário
@@ -66,7 +66,7 @@ const UserArea = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar */}
+          {/* Barra Lateral */}
           <div className="lg:col-span-1">
             <nav className="space-y-1">
               {tabs.map((tab) => (
@@ -85,15 +85,15 @@ const UserArea = () => {
               ))}
             </nav>
 
-            {/* Quick Actions */}
+            {/* Ações Rápidas */}
             <div className="mt-8 space-y-4">
               <h3 className="text-sm font-medium text-primary/70 px-4">
                 Ações Rápidas
               </h3>
               
-              {/* Theme Toggle */}
+              {/* Alternar Tema */}
               <button
-                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                onClick={toggleTheme}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-secondary/10 text-primary"
               >
                 {theme === 'light' ? (
@@ -104,7 +104,7 @@ const UserArea = () => {
                 <span>Alternar Tema</span>
               </button>
 
-              {/* Notifications */}
+              {/* Notificações */}
               <button
                 onClick={() => toast.success('Notificações atualizadas')}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-secondary/10 text-primary"
@@ -113,7 +113,7 @@ const UserArea = () => {
                 <span>Notificações</span>
               </button>
 
-              {/* Privacy */}
+              {/* Privacidade */}
               <button
                 onClick={() => toast.success('Configurações de privacidade atualizadas')}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-secondary/10 text-primary"
@@ -124,7 +124,7 @@ const UserArea = () => {
             </div>
           </div>
 
-          {/* Main Content */}
+          {/* Conteúdo Principal */}
           <div className="lg:col-span-3">
             <div className="bg-white rounded-xl shadow-sm border border-secondary">
               {renderContent()}

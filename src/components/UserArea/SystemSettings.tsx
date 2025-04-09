@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useTheme } from '../../hooks/useTheme';
+import { useTheme } from '../../contexts/ThemeContext';
 import { 
   Sun, 
   Moon, 
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 const SystemSettings = () => {
-  const { theme, setTheme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const [fontSize, setFontSize] = useState('normal');
   const [language, setLanguage] = useState('pt-BR');
   const [timezone, setTimezone] = useState('America/Sao_Paulo');
@@ -60,14 +60,14 @@ const SystemSettings = () => {
       </div>
 
       <div className="space-y-6">
-        {/* Theme */}
+        {/* Tema */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary">
             Tema
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button
-              onClick={() => setTheme('light')}
+              onClick={() => toggleTheme()}
               className={`flex items-center gap-4 p-4 rounded-lg border transition-all
                 ${theme === 'light'
                   ? 'border-accent bg-accent/5'
@@ -89,7 +89,7 @@ const SystemSettings = () => {
             </button>
 
             <button
-              onClick={() => setTheme('dark')}
+              onClick={() => toggleTheme()}
               className={`flex items-center gap-4 p-4 rounded-lg border transition-all
                 ${theme === 'dark'
                   ? 'border-accent bg-accent/5'
@@ -112,7 +112,7 @@ const SystemSettings = () => {
           </div>
         </div>
 
-        {/* Colors */}
+        {/* Cores */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary">
             Cores do Tema
@@ -150,7 +150,7 @@ const SystemSettings = () => {
           </div>
         </div>
 
-        {/* Font Size */}
+        {/* Tamanho da Fonte */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary flex items-center gap-2">
             <Type className="w-5 h-5" />
@@ -173,7 +173,7 @@ const SystemSettings = () => {
           </div>
         </div>
 
-        {/* Language */}
+        {/* Idioma */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary flex items-center gap-2">
             <Globe className="w-5 h-5" />
@@ -196,7 +196,7 @@ const SystemSettings = () => {
           </div>
         </div>
 
-        {/* Timezone */}
+        {/* Fuso Horário */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary flex items-center gap-2">
             <Clock className="w-5 h-5" />
@@ -219,7 +219,7 @@ const SystemSettings = () => {
           </div>
         </div>
 
-        {/* Accessibility */}
+        {/* Acessibilidade */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-primary flex items-center gap-2">
             <Eye className="w-5 h-5" />
