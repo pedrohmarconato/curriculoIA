@@ -70,6 +70,7 @@ const LoginStep = () => {
           password: formData.password
         });
 
+        console.log('Login attempt result:', { data, error }); // DEBUG LOG
         if (error) throw error;
 
         if (data.user) {
