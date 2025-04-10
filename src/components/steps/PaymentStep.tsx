@@ -1,13 +1,6 @@
-\
-import React, { useState, useCallback } from 'react'; // Added useState and React
-import { supabase } from '@/lib/supabaseClient';
-import { toast } from 'sonner';
-import { looksLikeResume } from '@/utils/extractPdfText'; // Assuming path is correct
-import { ResumeData } from '@/lib/resume-ai'; // Assuming path is correct
-
-import React, { useState, useCallback, useEffect } from 'react'; // Combined imports
+import React, { useState, useCallback, useEffect } from 'react';
 import { useResume } from '../../contexts/ResumeContext';
-import { supabase } from '../../lib/supabase'; // Assuming this is the correct path now
+import { supabase } from '../../lib/supabase';
 import {
   CreditCard,
   Wallet,
@@ -28,14 +21,17 @@ import {
 } from 'lucide-react';
 import { initMercadoPago, Wallet as MPWallet } from '@mercadopago/sdk-react';
 import { useCredits } from '../../hooks/useCredits';
-import ResumePreview from '../ResumePreview'; // Keep this
-import { toast } from 'sonner'; // Using sonner based on previous attempts
-import { extractTextFromPdf, looksLikeResume } from '../../utils/extractPdfText'; // Keep this
-// Removed resumeParser imports for now, assuming analysis comes from Supabase function
-import { ResumeData } from '@/lib/resume-ai'; // Use the type definition
+import ResumePreview from '../ResumePreview';
+import toast from 'react-hot-toast';
+import { extractTextFromPdf, looksLikeResume } from '../../utils/extractPdfText';
+import { ResumeData } from '../../lib/resume-ai';
 
-initMercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY);
+// Inicializa o MercadoPago com a chave pública (certifique-se que esta variável existe)
+if (import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY) {
+  initMercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY);
+}
 
+// Planos disponíveis
 const plans = [
   {
     id: 'premium',
@@ -75,543 +71,128 @@ const plans = [
 ];
 
 const PaymentStep = () => {
-  const { resumeData: contextResumeData, updateResumeData } = useResume(); // Renamed to avoid conflict
-  const { credits, loading: creditsLoading } = useCredits(contextResumeData.user?.id);
+  const { resumeData, updateResumeData } = useResume();
+  const { credits, loading: creditsLoading } = useCredits(resumeData.user?.id);
+  
+  // Estados
   const [selectedPlan, setSelectedPlan] = useState('premium');
   const [paymentMethod, setPaymentMethod] = useState('credit');
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false); // Renamed for clarity
-  const [preferenceId, setPreferenceId] = useState<string | null>(null); // Typed preferenceId
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [preferenceId, setPreferenceId] = useState<string | null>(null);
+  const [resumePreviewData, setResumePreviewData] = useState<ResumeData | null>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
 
-  // --- State for Resume Processing ---
-  const [extractedText, setExtractedText] = useState<string | null>(null);
-  const [analyzeData, setAnalyzeData] = useState<ResumeData | null>(null);
-  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
-  const [isLoadingGeneration, setIsLoadingGeneration] = useState(false);
-  const [generatedVisualData, setGeneratedVisualData] = useState<any>(null); // To store generation result (HTML/Style)
-  const [processingError, setProcessingError] = useState<string | null>(null);
-  // --- End State for Resume Processing ---
-
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 3;
-
-  // Função para extrair texto do currículo a partir de um arquivo ou perfil do LinkedIn
-  const extractResumeText = useCallback(async () => {
-    console.log('Extraindo texto do currículo');
-    
-    if (resumeData.resumeFile?.url) {
-      console.log('Extraindo de arquivo PDF:', resumeData.resumeFile.url);
-      try {
-        const { data, error } = await supabase.functions.invoke('resume-ai', {
-          body: {
-            action: 'extract',
-            data: { url: resumeData.resumeFile.url }
-          }
-        });
-
-        if (error) {
-          console.error('Erro ao extrair texto do PDF:', error);
-          throw new Error(`Falha ao extrair texto do PDF: ${error.message}`);
-        }
-
-        console.log('Texto extraído com sucesso do PDF');
-        return data;
-      } catch (error) {
-        console.error('Erro ao extrair texto do PDF:', error);
-        throw error;
-      }
-    } else if (resumeData.linkedinProfile) {
-      console.log('Extraindo do perfil LinkedIn:', resumeData.linkedinProfile);
-      try {
-        const { data, error } = await supabase.functions.invoke('resume-ai', {
-          body: {
-            action: 'linkedin',
-            data: { url: resumeData.linkedinProfile }
-          }
-        });
-
-        if (error) {
-          console.error('Erro ao extrair perfil do LinkedIn:', error);
-          throw new Error(`Falha ao extrair perfil do LinkedIn: ${error.message}`);
-        }
-
-        console.log('Dados extraídos com sucesso do LinkedIn');
-        return data;
-      } catch (error) {
-        console.error('Erro ao extrair perfil do LinkedIn:', error);
-        throw error;
-      }
-    } else {
-      throw new Error('Nenhuma fonte de currículo fornecida');
-    }
-  }, [resumeData.resumeFile, resumeData.linkedinProfile]);
-
-  const analyzeResumeText = useCallback(async (text: string): Promise<ResumeData | null> => {
-    if (!text) {
-      toast.error("Nenhum texto fornecido para análise.");
-      setProcessingError("Nenhum texto fornecido para análise.");
-      return null;
-    }
-    setIsLoadingAnalysis(true);
-    setProcessingError(null);
-    console.log('Iniciando análise do currículo...');
-    try {
-      const { data, error } = await supabase.functions.invoke('resume-ai', {
-        body: {
-          action: 'analyze',
-          data: { text: text }
-        }
-      });
-
-      if (error) {
-        console.error('Erro ao analisar currículo:', error);
-        throw new Error(`Falha ao analisar currículo: ${error.message}`);
-      }
-
-      console.log('Currículo analisado com sucesso');
-      const result = data as ResumeData;
-      setAnalyzeData(result);
-      return result;
-    } catch (error) {
-      console.error('Erro ao analisar currículo:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast.error(`Erro na análise: ${errorMessage}`);
-      setProcessingError(`Erro na análise: ${errorMessage}`);
-      setAnalyzeData(null);
-      return null;
-    } finally {
-      setIsLoadingAnalysis(false);
-    }
-  }, []);
-
-  const generateResumeVisual = useCallback(async (
-    currentExtractedText: string | null,
-    currentAnalysisResult: ResumeData | null
-  ): Promise<any | null> => {
-    if (!currentAnalysisResult) {
-      toast.error("Dados da análise não disponíveis para gerar visual.");
-      setProcessingError("Dados da análise não disponíveis para gerar visual.");
-      return null;
-    }
-
-    setIsLoadingGeneration(true);
-    setProcessingError(null);
-
-    if (!looksLikeResume(currentExtractedText || '')) {
-      console.warn("O texto extraído não parece ser um currículo");
-      toast.warn("O arquivo enviado não parece ser um currículo. A geração pode não ser ideal.");
-      // Não interrompe a geração, apenas avisa
-    }
-
-    console.log('Iniciando geração do visual do currículo...');
-    try {
-      const stylePayload = {
-        colors: {
-          primary: '#1E2749',
-          secondary: '#F5E6D3',
-          accent: '#FF7F6B',
-          background: '#FFFFFF',
-          text: '#2D3748'
-        },
-        style: 'modern'
-      };
-
-      const { data, error } = await supabase.functions.invoke('resume-ai', {
-        body: {
-          action: 'generate',
-          data: {
-            resume: currentAnalysisResult,
-            style: stylePayload
-          }
-        }
-      });
-
-      if (error) {
-        console.error('Erro ao gerar visual do currículo:', error);
-        throw new Error(`Falha ao gerar visual do currículo: ${error.message}`);
-      }
-
-      console.log('Visual do currículo gerado com sucesso:', data);
-      // Armazena os dados gerados E o payload de estilo usado, pois a API pode não retornar o estilo
-      setGeneratedVisualData({ ...data, style: stylePayload });
-      return data;
-
-    } catch (error) {
-      console.error('Erro ao gerar visual do currículo:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast.error(`Erro na geração do visual: ${errorMessage}`);
-      setProcessingError(`Erro na geração do visual: ${errorMessage}`);
-      setGeneratedVisualData(null);
-      return null;
-    } finally {
-      setIsLoadingGeneration(false);
-    }
-  }, []);
-      throw error;
-    }
-  }, []);
-
-  // Função para extrair dados do PDF diretamente no frontend
+  // Função para extrair dados do PDF
   const extractResumeData = useCallback(async () => {
+    if (!resumeData.resumeFile?.url) {
+      toast.error("URL do PDF não disponível");
+      return null;
+    }
+    
     setIsGeneratingPreview(true);
-    console.log("Iniciando extração de dados do PDF no frontend");
     
     try {
-      // Verificar se temos a URL do PDF
-      if (!resumeData.resumeFile?.url) {
-        console.error("URL do PDF não disponível");
-        throw new Error("URL do PDF não disponível");
+      // Extrair texto do PDF
+      const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
+      
+      // Verificar se o texto parece ser um currículo - apenas uma vez
+      const isResume = looksLikeResume(extractedText);
+      if (!isResume) {
+        toast("O arquivo enviado não parece ser um currículo. A visualização pode não ser ideal.", {
+          icon: '⚠️',
+          style: {
+            borderRadius: '10px',
+            background: '#FEF3C7',
+            color: '#92400E',
+          },
+          // Evitar duplicação adicionando um ID
+          id: 'resume-warning',
+        });
       }
       
-      console.log("URL do PDF:", resumeData.resumeFile.url);
+      // Criar dados simples de currículo para visualização
+      const basicData: ResumeData = {
+        personalInfo: {
+          name: resumeData.user?.name || "Nome não encontrado",
+          contact: {
+            email: resumeData.user?.email || "",
+            phone: "",
+            location: ""
+          }
+        },
+        experience: [{
+          company: "Empresa",
+          role: "Cargo/Função",
+          period: {
+            start: "2020-01",
+            end: "present"
+          },
+          description: "Detalhes da sua experiência profissional aparecerão aqui após a compra.",
+          achievements: ["Conquistas e responsabilidades serão listadas aqui."]
+        }],
+        education: [{
+          institution: "Instituição de Ensino",
+          degree: "Grau Acadêmico",
+          field: "Área de Estudo",
+          period: {
+            start: "2015-01",
+            end: "2019-12"
+          }
+        }],
+        skills: {
+          technical: [
+            { name: "Habilidade Técnica 1", level: "avançado" },
+            { name: "Habilidade Técnica 2", level: "intermediário" }
+          ],
+          interpersonal: [
+            { name: "Comunicação", level: "avançado" },
+            { name: "Trabalho em Equipe", level: "avançado" }
+          ],
+          tools: [
+            { name: "Microsoft Office", level: "avançado" }
+          ]
+        },
+        languages: [
+          { name: "Português", level: "nativo" },
+          { name: "Inglês", level: "intermediário" }
+        ],
+        certifications: []
+      };
       
-      // Extrair o texto do PDF
-      const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
-      console.log("Texto extraído do PDF:", extractedText.substring(0, 500) + "...");
-      
-      // A verificação looksLikeResume foi removida. A análise será tentada diretamente.
-      // Se a análise falhar ou retornar dados insuficientes, trataremos isso posteriormente.
-      console.log("Tentando analisar o texto extraído diretamente...");
-      
-      // Analisar o texto para extrair informações estruturadas
-      const extractedData = parseResumeText(extractedText, resumeData.user?.name, resumeData.user?.email);
-      console.log("Dados estruturados extraídos:", extractedData);
-      
-      // Definir os dados estruturados para exibição
-      setResumePreviewData(extractedData);
-      
-      // Guardar os dados no contexto para uso posterior
-      updateResumeData({
-        resumeData: extractedData
-      });
-      
-      return extractedData;
-    } catch (error) {
-      console.error("Erro ao processar currículo:", error);
-      toast.error("Não foi possível extrair informações completas do seu currículo. Exibindo versão simplificada.", {
-        duration: 5000,
-        icon: <AlertCircle className="text-amber-500" />
-      });
-      
-      // Usar os dados básicos do usuário em caso de falha
-      const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
-      
+      // Definir dados para visualização
       setResumePreviewData(basicData);
       updateResumeData({ resumeData: basicData });
+      
+      return basicData;
+    } catch (error) {
+      console.error("Erro ao processar PDF:", error);
+      toast.error("Não foi possível extrair informações do PDF. Exibindo versão simplificada.");
       return null;
     } finally {
       setIsGeneratingPreview(false);
     }
   }, [resumeData.resumeFile, resumeData.user, updateResumeData]);
-  
-  // Função para analisar o texto do currículo e extrair informações estruturadas
-  const parseResumeText = (text, userName, userEmail) => {
-    // Implementação simplificada de análise de currículo
-    // Na prática, você poderia usar regex mais robustos ou até mesmo OpenAI API
-    
-    // Estrutura básica que vamos preencher
-    const resumeData = {
-      personalInfo: {
-        name: userName || "Nome não encontrado",
-        contact: {
-          email: userEmail || "",
-          phone: "",
-          location: ""
-        }
-      },
-      experience: [],
-      education: [],
-      skills: {
-        technical: [],
-        interpersonal: [],
-        tools: []
-      },
-      languages: []
-    };
-    
-    // Extrair telefone (formato básico)
-    const phoneRegex = /\(?\d{2,3}\)?[-.\s]?\d{4,5}[-.\s]?\d{4}/g;
-    const phoneMatches = text.match(phoneRegex);
-    if (phoneMatches && phoneMatches.length > 0) {
-      resumeData.personalInfo.contact.phone = phoneMatches[0];
-    }
-    
-    // Extrair localização (cidades comuns brasileiras)
-    const locationRegex = /(São Paulo|Rio de Janeiro|Brasília|Salvador|Belo Horizonte|Curitiba|Fortaleza|Manaus|Recife|Porto Alegre)([,-\s].*?)?$/gmi;
-    const locationMatches = text.match(locationRegex);
-    if (locationMatches && locationMatches.length > 0) {
-      resumeData.personalInfo.contact.location = locationMatches[0].trim();
-    }
-    
-    // Extrair experiência profissional
-    // Procurar por padrões como "Experiência" ou "Experiência Profissional"
-    const experienceSection = extractSection(text, ['experiência', 'experiência profissional', 'experiencias', 'histórico profissional']);
-    
-    if (experienceSection) {
-      // Tentar encontrar empresas e cargos
-      const companyRegex = /(?:^|\n)([A-Z][A-Za-z\s]+)(?:\s*[-–]\s*|\n|:)([^\n]+)/g;
-      let match;
-      
-      while ((match = companyRegex.exec(experienceSection)) !== null) {
-        if (match.length >= 2) {
-          resumeData.experience.push({
-            company: match[1].trim(),
-            role: match[2] ? match[2].trim() : "Cargo não especificado",
-            period: {
-              start: "2020-01", // Valores padrão
-              end: "present"
-            },
-            description: "Responsável por...",
-            achievements: []
-          });
-        }
-      }
-    }
-    
-    // Se não encontramos experiências, adicionar uma padrão
-    if (resumeData.experience.length === 0) {
-      resumeData.experience.push({
-        company: "Empresa atual",
-        role: "Cargo atual",
-        period: {
-          start: "2020-01",
-          end: "present"
-        },
-        description: "Detalhes disponíveis na versão completa após a compra",
-        achievements: ["Acesso a todas as conquistas após a compra"]
-      });
-    }
-    
-    // Extrair educação
-    const educationSection = extractSection(text, ['educação', 'formação', 'formação acadêmica', 'escolaridade']);
-    
-    if (educationSection) {
-      // Tentar encontrar instituições e cursos
-      const educationRegex = /(?:^|\n)([A-Z][A-Za-z\s]+)(?:\s*[-–]\s*|\n|:)([^\n]+)/g;
-      let match;
-      
-      while ((match = educationRegex.exec(educationSection)) !== null) {
-        if (match.length >= 2) {
-          resumeData.education.push({
-            institution: match[1].trim(),
-            degree: "Graduação",
-            field: match[2] ? match[2].trim() : "Área não especificada",
-            period: {
-              start: "2015-01",
-              end: "2019-12"
-            }
-          });
-        }
-      }
-    }
-    
-    // Se não encontramos educação, adicionar uma padrão
-    if (resumeData.education.length === 0) {
-      resumeData.education.push({
-        institution: "Instituição de Ensino",
-        degree: "Graduação",
-        field: "Sua área de formação",
-        period: {
-          start: "2015-01",
-          end: "2019-12"
-        }
-      });
-    }
-    
-    // Extrair habilidades
-    const skillsSection = extractSection(text, ['habilidades', 'competências', 'skills', 'conhecimentos']);
-    
-    if (skillsSection) {
-      // Dividir por linhas ou vírgulas
-      const skillItems = skillsSection.split(/[,\n;]/).map(item => item.trim()).filter(item => item.length > 0);
-      
-      // Adicionar como habilidades técnicas
-      skillItems.forEach(skill => {
-        if (skill.length > 2 && skill.length < 30) { // Filtrar entradas muito curtas ou muito longas
-          resumeData.skills.technical.push({
-            name: skill,
-            level: determineSkillLevel(skill, text)
-          });
-        }
-      });
-    }
-    
-    // Se não encontramos habilidades, adicionar algumas padrão
-    if (resumeData.skills.technical.length === 0) {
-      resumeData.skills.technical = [
-        { name: "Habilidade Técnica 1", level: "avançado" },
-        { name: "Habilidade Técnica 2", level: "intermediário" }
-      ];
-    }
-    
-    // Adicionar algumas habilidades interpessoais padrão
-    resumeData.skills.interpersonal = [
-      { name: "Comunicação", level: "avançado" },
-      { name: "Trabalho em Equipe", level: "avançado" }
-    ];
-    
-    // Extrair idiomas
-    const languagesSection = extractSection(text, ['idiomas', 'línguas', 'languages']);
-    
-    if (languagesSection) {
-      // Procurar por idiomas comuns
-      const commonLanguages = ['português', 'inglês', 'espanhol', 'francês', 'alemão', 'italiano', 'japonês', 'mandarim'];
-      
-      commonLanguages.forEach(language => {
-        const languageRegex = new RegExp(`${language}\\s*[-:.]?\\s*(básico|intermediário|avançado|fluente|nativo)`, 'i');
-        const match = languagesSection.match(languageRegex);
-        
-        if (match) {
-          resumeData.languages.push({
-            name: language.charAt(0).toUpperCase() + language.slice(1),
-            level: match[1].toLowerCase()
-          });
-        }
-      });
-    }
-    
-    // Se não encontramos idiomas, adicionar Português como padrão
-    if (resumeData.languages.length === 0) {
-      resumeData.languages = [
-        { name: "Português", level: "nativo" },
-        { name: "Inglês", level: "intermediário" }
-      ];
-    }
-    
-    return resumeData;
-  };
-  
-  // Função para extrair uma seção do texto
-  const extractSection = (text, sectionHeaders) => {
-    // Converter texto para minúsculas para facilitar a busca
-    const lowerText = text.toLowerCase();
-    
-    let startIndex = -1;
-    let endIndex = text.length;
-    
-    // Encontrar o início da seção (usando qualquer um dos headers fornecidos)
-    for (const header of sectionHeaders) {
-      const headerIndex = lowerText.indexOf(header);
-      if (headerIndex !== -1 && (startIndex === -1 || headerIndex < startIndex)) {
-        startIndex = headerIndex;
-      }
-    }
-    
-    if (startIndex === -1) {
-      return null; // Seção não encontrada
-    }
-    
-    // Avançar até o fim do cabeçalho
-    startIndex = lowerText.indexOf('\n', startIndex);
-    if (startIndex === -1) {
-      startIndex = 0; // Se não encontrar quebra de linha, usar o texto inteiro
-    } else {
-      startIndex += 1; // Pular a quebra de linha
-    }
-    
-    // Procurar pelo próximo cabeçalho comum em currículos
-    const nextSectionHeaders = [
-      'experiência', 'experiências', 'formação', 'educação', 
-      'habilidades', 'competências', 'idiomas', 'línguas',
-      'certificações', 'cursos', 'referências', 'objetivo'
-    ];
-    
-    for (const header of nextSectionHeaders) {
-      const headerIndex = lowerText.indexOf(header, startIndex);
-      if (headerIndex !== -1 && headerIndex < endIndex) {
-        endIndex = headerIndex;
-      }
-    }
-    
-    return text.substring(startIndex, endIndex).trim();
-  };
-  
-  // Função para determinar o nível de habilidade
-  const determineSkillLevel = (skill, fullText) => {
-    const levels = ['básico', 'intermediário', 'avançado', 'especialista'];
-    
-    // Procurar pelo padrão "habilidade - nível" ou similar
-    const skillLevelRegex = new RegExp(`${skill}\\s*[-:.]?\\s*(básico|intermediário|avançado|especialista)`, 'i');
-    const match = fullText.match(skillLevelRegex);
-    
-    if (match && match[1]) {
-      return match[1].toLowerCase();
-    }
-    
-    // Caso não encontre um nível explícito, atribuir um nível "intermediário" como padrão
-    return 'intermediário';
-  };
-  
-  // Função para criar dados básicos do currículo
-  const createBasicResumeData = (name, email) => {
-    return {
-      personalInfo: {
-        name: name || "Seu Nome",
-        contact: {
-          email: email || "",
-          phone: "",
-          location: ""
-        }
-      },
-      experience: [{
-        company: "Sua experiência profissional será mostrada aqui",
-        role: "Seu cargo atual",
-        period: {
-          start: "Data início",
-          end: "present"
-        },
-        description: "Após a compra, você terá acesso aos detalhes completos do seu currículo.",
-        achievements: ["Todos os seus destaques serão mostrados após a compra"]
-      }],
-      education: [{
-        institution: "Sua instituição de ensino",
-        degree: "Seu grau acadêmico",
-        field: "Sua área de formação",
-        period: {
-          start: "Data início",
-          end: "Data conclusão"
-        }
-      }],
-      skills: {
-        technical: [
-          { name: "Suas habilidades técnicas", level: "avançado" },
-          { name: "Serão mostradas aqui", level: "intermediário" }
-        ],
-        interpersonal: [
-          { name: "Comunicação", level: "avançado" },
-          { name: "Trabalho em Equipe", level: "avançado" }
-        ],
-        tools: []
-      },
-      languages: [
-        { name: "Português", level: "nativo" },
-        { name: "Inglês", level: "intermediário" }
-      ]
-    };
-  };
-  
-  // Função para gerar prévia do currículo
+
+  // Gerar prévia do currículo
   const generatePreview = useCallback(async () => {
     setIsGeneratingPreview(true);
-    console.log("Gerando prévia do currículo");
     
     try {
       // Se já temos dados analisados, usamos eles
       if (resumeData.resumeData) {
-        console.log("Usando dados de currículo já analisados");
         setResumePreviewData(resumeData.resumeData);
         return;
       }
       
       // Se temos um PDF, tentamos extrair os dados
       if (resumeData.resumeFile?.url) {
-        console.log("Tentando extrair dados do PDF");
         await extractResumeData();
         return;
       }
       
       // Se não temos dados nem arquivo, usamos os dados do usuário
-      console.log("Usando dados básicos do usuário");
-      const userData = {
+      const userData: ResumeData = {
         personalInfo: {
           name: resumeData.user?.name || "Nome do Usuário",
           contact: {
@@ -622,10 +203,10 @@ const PaymentStep = () => {
         },
         experience: [
           {
-            company: "Mostraremos as informações do seu currículo aqui",
+            company: "Compre um plano para ver detalhes completos",
             role: "Seu cargo atual",
             period: {
-              start: "Data início",
+              start: "2020-01",
               end: "present"
             },
             description: "Após a compra, você terá acesso a todos os recursos para personalizar seu currículo profissional.",
@@ -638,8 +219,8 @@ const PaymentStep = () => {
             degree: "Seu Grau",
             field: "Sua Área",
             period: {
-              start: "Data início",
-              end: "Data fim"
+              start: "2015-01",
+              end: "2019-12"
             }
           }
         ],
@@ -661,18 +242,16 @@ const PaymentStep = () => {
         languages: [
           { name: "Português", level: "nativo" },
           { name: "Inglês", level: "intermediário" }
-        ]
+        ],
+        certifications: []
       };
       
       setResumePreviewData(userData);
     } catch (error) {
       console.error('Erro ao gerar prévia:', error);
-      toast.error('Houve um erro ao gerar a prévia. Tentando novamente com dados simplificados.', {
-        duration: 5000,
-        icon: <AlertCircle className="text-amber-500" />,
-      });
+      toast.error('Houve um erro ao gerar a prévia. Tentando novamente com dados simplificados.');
       
-      // Mesmo com erro, mostramos alguma coisa
+      // Dados básicos de fallback
       setResumePreviewData({
         personalInfo: {
           name: resumeData.user?.name || "Nome do Usuário",
@@ -724,8 +303,8 @@ const PaymentStep = () => {
     }
   }, [resumeData.resumeData, resumeData.resumeFile, resumeData.user, extractResumeData]);
 
+  // Inicializa a prévia do currículo ao carregar o componente
   useEffect(() => {
-    // Inicializa a prévia e tenta extrair dados do PDF automaticamente
     if (resumeData.resumeFile?.url && !resumeData.resumeData) {
       extractResumeData();
     } else {
@@ -733,81 +312,72 @@ const PaymentStep = () => {
     }
   }, [resumeData.resumeFile, resumeData.resumeData, extractResumeData, generatePreview]);
 
+  // Criar preferência de pagamento para o MercadoPago
   const createPreference = async () => {
     setIsProcessing(true);
     try {
       const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
       if (!selectedPlanData) throw new Error('Plano não encontrado');
 
-      const response = await fetch('/api/create-preference', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('create-preference', {
+        body: {
           title: `Plano ${selectedPlanData.name}`,
           price: selectedPlanData.price,
           quantity: 1,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao criar preferência de pagamento');
-      }
+      if (error) throw error;
 
-      const data = await response.json();
-      if (data.id) {
+      if (data && data.id) {
         setPreferenceId(data.id);
       } else {
         throw new Error('Erro ao criar preferência de pagamento');
       }
     } catch (error) {
-      console.error('Error creating preference:', error);
-      toast.error('Erro ao iniciar pagamento. Tente novamente.', {
-        duration: 5000,
-        icon: <AlertCircle className="text-red-500" />,
-      });
+      console.error('Erro ao criar preferência:', error);
+      toast.error('Erro ao iniciar pagamento. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
   };
 
+  // Criar pagamento PIX
+  const createPixPayment = async () => {
+    setIsProcessing(true);
+    try {
+      const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
+      if (!selectedPlanData) throw new Error('Plano não encontrado');
+
+      const { data, error } = await supabase.functions.invoke('create-pix', {
+        body: {
+          planId: selectedPlan,
+          amount: selectedPlanData.price,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data && data.qrCode) {
+        // Aqui você poderia mostrar o QR code para o usuário
+        toast.success('QR Code PIX gerado com sucesso!');
+      } else {
+        throw new Error('Erro ao gerar PIX');
+      }
+    } catch (error) {
+      console.error('Erro ao gerar PIX:', error);
+      toast.error('Erro ao gerar PIX. Tente novamente.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Processar pagamento conforme método selecionado
   const handlePayment = async () => {
     if (paymentMethod === 'credit') {
       await createPreference();
     } else if (paymentMethod === 'pix') {
-      setIsProcessing(true);
-      try {
-        const response = await fetch('/api/create-pix', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            planId: selectedPlan,
-            amount: plans.find(p => p.id === selectedPlan)?.price,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('Erro ao gerar PIX');
-        }
-
-        const data = await response.json();
-        if (data.qrCode) {
-          toast.success('QR Code PIX gerado com sucesso!');
-        } else {
-          throw new Error('Erro ao gerar PIX');
-        }
-      } catch (error) {
-        console.error('Error creating PIX:', error);
-        toast.error('Erro ao gerar PIX. Tente novamente.', {
-          duration: 5000,
-          icon: <AlertCircle className="text-red-500" />,
-        });
-      } finally {
-        setIsProcessing(false);
-      }
+      await createPixPayment();
     }
   };
 
@@ -956,7 +526,15 @@ const PaymentStep = () => {
               </p>
               <button
                 onClick={() => {
-                  toast.info("Tentando extrair dados do seu currículo...");
+                  toast("Tentando extrair dados do seu currículo...", {
+                  icon: 'ℹ️',
+                  style: {
+                    borderRadius: '10px',
+                    background: '#E0F2FE',
+                    color: '#0369A1',
+                  },
+                  id: 'extract-info', // ID único para evitar duplicação
+                });
                   setIsGeneratingPreview(true);
                   extractResumeData()
                     .then(() => toast.success("Dados extraídos com sucesso!"))
@@ -1147,10 +725,15 @@ const PaymentStep = () => {
         </button>
 
         {preferenceId ? (
-          <MPWallet 
-            initialization={{ preferenceId }}
-            customization={{ texts: { action: 'Pagar' } }}
-          />
+          <div className="mercadopago-button-container">
+            {/* Renderização condicional do botão do MercadoPago */}
+            {typeof MPWallet === 'function' && (
+              <MPWallet 
+                initialization={{ preferenceId }}
+                customization={{ texts: { action: 'Pagar' } }}
+              />
+            )}
+          </div>
         ) : (
           <button
             onClick={handlePayment}
