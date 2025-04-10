@@ -1,119 +1,100 @@
-/**
- * Este arquivo contém funções para extrair texto de arquivos PDF
- * Utiliza fetch para baixar o PDF e técnicas básicas para extrair texto
- */
+// Funções para extrair texto de PDFs diretamente no frontend
+import * as pdfjs from 'pdfjs-dist';
+
+// Carregar worker do PDF.js (necessário para processamento em thread separada)
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 /**
- * Extrai texto de um PDF a partir de sua URL
- * @param url URL do arquivo PDF
- * @returns Promessa que resolve para o texto extraído ou rejeita com erro
+ * Extrai texto de um arquivo PDF a partir de uma URL
  */
 export async function extractTextFromPdf(url: string): Promise<string> {
-    try {
-      console.log("Iniciando download do PDF:", url);
-      
-      // Baixar o PDF como ArrayBuffer
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Erro ao baixar o PDF: ${response.status} ${response.statusText}`);
-      }
-      
-      // Obter o conteúdo binário
-      const pdfBuffer = await response.arrayBuffer();
-      console.log("PDF baixado, tamanho:", pdfBuffer.byteLength, "bytes");
-      
-      // Caso você queira implementar extração de texto do PDF no frontend,
-      // você precisaria instalar uma biblioteca como pdf.js
-      // Por enquanto, vamos usar uma solução simplificada:
-      // - Se for um PDF pequeno (< 5MB), tentamos extrair texto usando string matching
-      // - Caso contrário, usamos uma abordagem de fallback
-      
-      // Simplificação: buscar por strings de texto no PDF
-      // Isso não é uma solução robusta, mas pode funcionar para PDFs simples
-      const textDecoder = new TextDecoder('utf-8');
-      let rawText = textDecoder.decode(pdfBuffer);
-      
-      // Limpar o texto extraído (remover caracteres não imprimíveis)
-      let cleanedText = "";
-      
-      // Percorrer o texto e extrair somente caracteres imprimíveis
-      for (let i = 0; i < rawText.length; i++) {
-        const charCode = rawText.charCodeAt(i);
-        // Manter apenas caracteres imprimíveis e quebras de linha
-        if ((charCode >= 32 && charCode <= 126) || // ASCII básico
-            (charCode >= 128 && charCode <= 255) || // Extended ASCII/Latin
-            charCode === 10 || charCode === 13) {   // Quebras de linha
-          cleanedText += rawText.charAt(i);
+  try {
+    console.log('Iniciando extração de texto do PDF:', url);
+    
+    // Carregar documento PDF
+    const pdf = await pdfjs.getDocument(url).promise;
+    console.log(`PDF carregado, número de páginas: ${pdf.numPages}`);
+    
+    // Array para armazenar texto de cada página
+    let fullText = '';
+    
+    // Extrair texto de cada página
+    for (let i = 1; i <= pdf.numPages; i++) {
+      try {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        
+        // Processar itens de texto para preservar layout
+        let lastY: number | null = null;
+        let text = '';
+        
+        for (const item of textContent.items) {
+          if ('str' in item) {
+            // Verificar mudança significativa de posição vertical para adicionar quebra de linha
+            if (lastY !== null && Math.abs((item as any).transform[5] - lastY) > 5) {
+              text += '\n';
+            }
+            text += item.str;
+            lastY = (item as any).transform[5];
+          }
         }
-      }
-      
-      // Processar o texto para remover ruído
-      const processedText = processRawPdfText(cleanedText);
-      
-      if (processedText.length < 100) {
-        console.warn("Pouco texto extraído do PDF, possivelmente um PDF digitalizado ou protegido");
-        return "Não foi possível extrair texto suficiente deste PDF. " +
-               "O arquivo pode ser digitalizado, protegido ou conter principalmente imagens.";
-      }
-      
-      return processedText;
-    } catch (error) {
-      console.error("Erro ao extrair texto do PDF:", error);
-      throw new Error(`Falha ao processar o PDF: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Processa o texto extraído do PDF para remover padrões de formatação 
-   * e melhorar a qualidade do texto extraído
-   */
-  function processRawPdfText(text: string): string {
-    // Remover sequências de espaços e tabs
-    let processed = text.replace(/[ \t]+/g, ' ');
-    
-    // Substituir múltiplas quebras de linha por uma única
-    processed = processed.replace(/\n+/g, '\n');
-    
-    // Remover caracteres de controle
-    processed = processed.replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '');
-    
-    // Substituir sequências comuns de caracteres especiais
-    processed = processed.replace(/[^\w\s.,;:!?()[\]{}\-'"/\\&%#@$*+=<>|~^`´]/g, ' ');
-    
-    // Remover linhas muito curtas (provavelmente cabeçalhos/rodapés)
-    const lines = processed.split('\n');
-    const filteredLines = lines.filter(line => line.trim().length > 10);
-    processed = filteredLines.join('\n');
-    
-    return processed;
-  }
-  
-  /**
-   * Verifica se o conteúdo parece ser um currículo
-   * @param text Texto a ser verificado
-   * @returns true se parece um currículo, false caso contrário
-   */
-  export function looksLikeResume(text: string): boolean {
-    const resumeKeywords = [
-      'currículo', 'curriculum', 'vitae', 'cv', 'résumé',
-      'experiência', 'experience', 'profissional', 'professional',
-      'educação', 'education', 'formação', 'formation', 'academic',
-      'habilidades', 'skills', 'competências', 'competences',
-      'idiomas', 'languages', 'línguas'
-    ];
-    
-    const lowerText = text.toLowerCase();
-    
-    // Verificar se pelo menos 3 palavras-chave estão presentes
-    let keywordsFound = 0;
-    for (const keyword of resumeKeywords) {
-      if (lowerText.includes(keyword)) {
-        keywordsFound++;
-        if (keywordsFound >= 3) {
-          return true;
-        }
+        
+        fullText += text + '\n\n';
+      } catch (pageError) {
+        console.warn(`Erro ao processar página ${i}:`, pageError);
+        // Continuar com as próximas páginas
       }
     }
     
-    return false;
+    console.log('Extração de texto concluída com sucesso');
+    
+    // Limpar excesso de linhas em branco e espaços
+    const cleanedText = fullText
+      .replace(/\n{3,}/g, '\n\n')  // Substituir mais de 2 quebras por apenas 2
+      .replace(/\s+$/, '')         // Remover espaços no final
+      .trim();
+      
+    return cleanedText;
+  } catch (error) {
+    console.error('Erro ao extrair texto do PDF:', error);
+    throw new Error(`Falha ao extrair texto do PDF: ${error.message}`);
   }
+}
+
+/**
+ * Verifica se o texto extraído parece ser um currículo
+ */
+export function looksLikeResume(text: string): boolean {
+  if (!text || text.length < 200) return false;
+  
+  // Palavras-chave comuns em currículos
+  const resumeKeywords = [
+    'experiência', 'experience', 'currículo', 'curriculum vitae', 
+    'resumé', 'profissional', 'professional', 'formação', 
+    'education', 'skills', 'habilidades', 'competências', 
+    'idiomas', 'languages', 'qualificações', 'endereço', 
+    'e-mail', 'telefone', 'tel', 'celular'
+  ];
+  
+  // Verificar se pelo menos algumas palavras-chave estão presentes
+  const lowerText = text.toLowerCase();
+  let keywordCount = 0;
+  
+  for (const keyword of resumeKeywords) {
+    if (lowerText.includes(keyword)) {
+      keywordCount++;
+      if (keywordCount >= 3) {
+        return true;
+      }
+    }
+  }
+  
+  // Verificar por estruturas comuns de currículo
+  // (presença de e-mail, telefone, formação acadêmica, etc.)
+  const hasEmail = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text);
+  const hasPhone = /\(?\d{2,3}\)?[-.\s]?\d{4,5}[-.\s]?\d{4}/.test(text);
+  const hasDateRanges = /\d{2}\/\d{2,4}([-–—]\d{2}\/\d{2,4}|\s*até\s*\d{2}\/\d{2,4}|\s*-\s*presente)/.test(text);
+  
+  // Se tiver pelo menos 2 desses padrões, provavelmente é um currículo
+  return (hasEmail && hasPhone) || (hasEmail && hasDateRanges) || (hasPhone && hasDateRanges);
+}
