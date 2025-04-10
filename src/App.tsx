@@ -1,4 +1,4 @@
-import { useResume } from './context/ResumeContext';
+import { useResume } from './contexts/ResumeContext';
 import TimelineFlow from './components/TimelineFlow';
 import UserMenu from './components/UserMenu';
 import UserArea from './components/UserArea';

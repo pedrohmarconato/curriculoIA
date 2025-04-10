@@ -546,8 +546,6 @@ const ResumePreview: React.FC<ResumePreviewProps> = ({
                     <input
                       type="text"
                       value={data.personalInfo.contact.location || ''}
-                      onChange={(e) => handleFieldEdit('personalInfo type="text"
-                      value={data.personalInfo.contact.location || ''}
                       onChange={(e) => handleFieldEdit('personalInfo', 'contact', e.target.value, undefined, 'location')}
                       className="flex-1 bg-transparent border-b border-white/30 focus:outline-none focus:border-white"
                       placeholder="Adicionar localização"

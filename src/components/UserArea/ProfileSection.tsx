@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useResume } from '../../context/ResumeContext';
+import { useResume } from '../../contexts/ResumeContext';
 import { supabase } from '../../lib/supabase';
 import { 
   Upload,

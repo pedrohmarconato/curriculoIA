@@ -1,12 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useResume } from '../../context/ResumeContext';
-import { supabase } from '../../lib/supabase';
-import { 
-  CreditCard, 
-  Wallet, 
+\
+import React, { useState, useCallback } from 'react'; // Added useState and React
+import { supabase } from '@/lib/supabaseClient';
+import { toast } from 'sonner';
+import { looksLikeResume } from '@/utils/extractPdfText'; // Assuming path is correct
+import { ResumeData } from '@/lib/resume-ai'; // Assuming path is correct
+
+import React, { useState, useCallback, useEffect } from 'react'; // Combined imports
+import { useResume } from '../../contexts/ResumeContext';
+import { supabase } from '../../lib/supabase'; // Assuming this is the correct path now
+import {
+  CreditCard,
+  Wallet,
   CheckCircle2,
-  Shield, 
-  Star, 
+  Shield,
+  Star,
   Zap,
   Clock,
   Users,
@@ -21,10 +28,11 @@ import {
 } from 'lucide-react';
 import { initMercadoPago, Wallet as MPWallet } from '@mercadopago/sdk-react';
 import { useCredits } from '../../hooks/useCredits';
-import ResumePreview from '../ResumePreview';
-import toast from 'react-hot-toast';
-import { extractTextFromPdf, looksLikeResume } from '../../utils/extractPdfText';
-import { parseResumeText, createBasicResumeData } from '../../utils/resumeParser';
+import ResumePreview from '../ResumePreview'; // Keep this
+import { toast } from 'sonner'; // Using sonner based on previous attempts
+import { extractTextFromPdf, looksLikeResume } from '../../utils/extractPdfText'; // Keep this
+// Removed resumeParser imports for now, assuming analysis comes from Supabase function
+import { ResumeData } from '@/lib/resume-ai'; // Use the type definition
 
 initMercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY);
 
@@ -67,15 +75,22 @@ const plans = [
 ];
 
 const PaymentStep = () => {
-  const { resumeData, updateResumeData } = useResume();
-  const { credits, loading: creditsLoading } = useCredits(resumeData.user?.id);
+  const { resumeData: contextResumeData, updateResumeData } = useResume(); // Renamed to avoid conflict
+  const { credits, loading: creditsLoading } = useCredits(contextResumeData.user?.id);
   const [selectedPlan, setSelectedPlan] = useState('premium');
   const [paymentMethod, setPaymentMethod] = useState('credit');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [preferenceId, setPreferenceId] = useState(null);
-  const [previewHtml, setPreviewHtml] = useState(null);
-  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
-  const [resumePreviewData, setResumePreviewData] = useState(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false); // Renamed for clarity
+  const [preferenceId, setPreferenceId] = useState<string | null>(null); // Typed preferenceId
+
+  // --- State for Resume Processing ---
+  const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [analyzeData, setAnalyzeData] = useState<ResumeData | null>(null);
+  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
+  const [isLoadingGeneration, setIsLoadingGeneration] = useState(false);
+  const [generatedVisualData, setGeneratedVisualData] = useState<any>(null); // To store generation result (HTML/Style)
+  const [processingError, setProcessingError] = useState<string | null>(null);
+  // --- End State for Resume Processing ---
+
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
@@ -130,19 +145,20 @@ const PaymentStep = () => {
     }
   }, [resumeData.resumeFile, resumeData.linkedinProfile]);
 
-  // Função para analisar o texto do currículo
-  const analyzeResumeText = useCallback(async (resumeText) => {
-    console.log('Analisando texto do currículo:', resumeText ? 'Texto disponível' : 'VAZIO');
-    
-    if (!resumeText) {
-      throw new Error('Texto do currículo está vazio');
+  const analyzeResumeText = useCallback(async (text: string): Promise<ResumeData | null> => {
+    if (!text) {
+      toast.error("Nenhum texto fornecido para análise.");
+      setProcessingError("Nenhum texto fornecido para análise.");
+      return null;
     }
-
+    setIsLoadingAnalysis(true);
+    setProcessingError(null);
+    console.log('Iniciando análise do currículo...');
     try {
       const { data, error } = await supabase.functions.invoke('resume-ai', {
         body: {
           action: 'analyze',
-          data: { text: resumeText }
+          data: { text: text }
         }
       });
 
@@ -152,33 +168,59 @@ const PaymentStep = () => {
       }
 
       console.log('Currículo analisado com sucesso');
-      return data;
+      const result = data as ResumeData;
+      setAnalyzeData(result);
+      return result;
     } catch (error) {
       console.error('Erro ao analisar currículo:', error);
-      throw error;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error(`Erro na análise: ${errorMessage}`);
+      setProcessingError(`Erro na análise: ${errorMessage}`);
+      setAnalyzeData(null);
+      return null;
+    } finally {
+      setIsLoadingAnalysis(false);
     }
   }, []);
 
-  // Função para gerar visual do currículo
-  const generateVisualResume = useCallback(async (analyzeData) => {
-    console.log('Gerando visual do currículo');
-    
+  const generateResumeVisual = useCallback(async (
+    currentExtractedText: string | null,
+    currentAnalysisResult: ResumeData | null
+  ): Promise<any | null> => {
+    if (!currentAnalysisResult) {
+      toast.error("Dados da análise não disponíveis para gerar visual.");
+      setProcessingError("Dados da análise não disponíveis para gerar visual.");
+      return null;
+    }
+
+    setIsLoadingGeneration(true);
+    setProcessingError(null);
+
+    if (!looksLikeResume(currentExtractedText || '')) {
+      console.warn("O texto extraído não parece ser um currículo");
+      toast.warn("O arquivo enviado não parece ser um currículo. A geração pode não ser ideal.");
+      // Não interrompe a geração, apenas avisa
+    }
+
+    console.log('Iniciando geração do visual do currículo...');
     try {
+      const stylePayload = {
+        colors: {
+          primary: '#1E2749',
+          secondary: '#F5E6D3',
+          accent: '#FF7F6B',
+          background: '#FFFFFF',
+          text: '#2D3748'
+        },
+        style: 'modern'
+      };
+
       const { data, error } = await supabase.functions.invoke('resume-ai', {
         body: {
           action: 'generate',
           data: {
-            resume: analyzeData,
-            style: {
-              colors: {
-                primary: '#1E2749',
-                secondary: '#F5E6D3',
-                accent: '#FF7F6B',
-                background: '#FFFFFF',
-                text: '#2D3748'
-              },
-              style: 'modern'
-            }
+            resume: currentAnalysisResult,
+            style: stylePayload
           }
         }
       });
@@ -188,10 +230,22 @@ const PaymentStep = () => {
         throw new Error(`Falha ao gerar visual do currículo: ${error.message}`);
       }
 
-      console.log('Visual do currículo gerado com sucesso');
+      console.log('Visual do currículo gerado com sucesso:', data);
+      // Armazena os dados gerados E o payload de estilo usado, pois a API pode não retornar o estilo
+      setGeneratedVisualData({ ...data, style: stylePayload });
       return data;
+
     } catch (error) {
       console.error('Erro ao gerar visual do currículo:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error(`Erro na geração do visual: ${errorMessage}`);
+      setProcessingError(`Erro na geração do visual: ${errorMessage}`);
+      setGeneratedVisualData(null);
+      return null;
+    } finally {
+      setIsLoadingGeneration(false);
+    }
+  }, []);
       throw error;
     }
   }, []);
@@ -214,16 +268,9 @@ const PaymentStep = () => {
       const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
       console.log("Texto extraído do PDF:", extractedText.substring(0, 500) + "...");
       
-      // Verificar se o texto parece um currículo
-      if (!looksLikeResume(extractedText)) {
-        console.warn("O texto extraído não parece ser um currículo");
-        toast.warning("O arquivo enviado não parece ser um currículo. Usando dados básicos.");
-        
-        const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
-        setResumePreviewData(basicData);
-        updateResumeData({ resumeData: basicData });
-        return basicData;
-      }
+      // A verificação looksLikeResume foi removida. A análise será tentada diretamente.
+      // Se a análise falhar ou retornar dados insuficientes, trataremos isso posteriormente.
+      console.log("Tentando analisar o texto extraído diretamente...");
       
       // Analisar o texto para extrair informações estruturadas
       const extractedData = parseResumeText(extractedText, resumeData.user?.name, resumeData.user?.email);

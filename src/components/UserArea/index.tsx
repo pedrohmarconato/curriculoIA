@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useResume } from '../../context/ResumeContext';
+import { useResume } from '../../contexts/ResumeContext';
 import { 
   User, 
   Settings, 

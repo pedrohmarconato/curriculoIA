@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useResume } from '../../context/ResumeContext';
+import { useResume } from '../../contexts/ResumeContext';
 import { Loader2 } from 'lucide-react';
 
 const GenerationStep = () => {

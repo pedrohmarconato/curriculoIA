@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useResume } from '../../context/ResumeContext';
+import { useResume } from '../../contexts/ResumeContext';
 import { Upload, Linkedin, FileText, PlusCircle, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';

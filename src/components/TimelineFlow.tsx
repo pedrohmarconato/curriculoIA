@@ -1,4 +1,4 @@
-import { useResume } from '../context/ResumeContext';
+import { useResume } from '../contexts/ResumeContext';
 import LoginStep from './steps/LoginStep';
 import UploadStep from './steps/UploadStep';
 import PersonalizationStep from './steps/PersonalizationStep';

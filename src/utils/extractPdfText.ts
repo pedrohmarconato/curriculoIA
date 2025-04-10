@@ -1,8 +1,8 @@
 // Funções para extrair texto de PDFs diretamente no frontend
 import * as pdfjs from 'pdfjs-dist';
 
-// Carregar worker do PDF.js (necessário para processamento em thread separada)
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+// Configuração do worker via CDN
+pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
 /**
  * Extrai texto de um arquivo PDF a partir de uma URL
