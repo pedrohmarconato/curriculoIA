@@ -101,7 +101,7 @@ const PaymentStep = () => {
       console.log("Processando currículo no servidor:", resumeData.resumeFile.url);
       
       // Extrair texto do PDF usando função backend
-      const { data: extractData, error: extractError } = await supabase.functions.invoke('resume-ai', {
+      const { data: extractResponse, error: extractError } = await supabase.functions.invoke('resume-ai', {
         body: {
           action: 'extract',
           data: { url: resumeData.resumeFile.url }
@@ -113,16 +113,19 @@ const PaymentStep = () => {
         throw new Error(`Falha ao extrair texto do PDF: ${extractError.message}`);
       }
 
+      if (!extractResponse || !extractResponse.data) {
+        throw new Error('Resposta inválida da função de extração');
+      }
+
+      const extractedText = extractResponse.data;
       console.log("Texto extraído com sucesso, analisando...");
       
       // Analisar currículo usando IA
-       console.log("Texto a ser enviado para análise:", extractData.text); // Log para depuração
-      const { data: analyzeData, error: analyzeError } = await supabase.functions.invoke('resume-ai', {
+      const { data: analyzeResponse, error: analyzeError } = await supabase.functions.invoke('resume-ai', {
         body: { 
           action: 'analyze',
-           text: extractData.text 
-          }
-        
+          data: { text: extractedText }
+        }
       });
 
       if (analyzeError) {
@@ -130,21 +133,36 @@ const PaymentStep = () => {
         throw new Error(`Falha ao analisar currículo: ${analyzeError.message}`);
       }
 
+      if (!analyzeResponse || !analyzeResponse.data) {
+        throw new Error('Resposta inválida da função de análise');
+      }
+
       console.log("Currículo analisado com sucesso");
       
       // Armazenar dados e atualizar contexto
-      setResumePreviewData(analyzeData.data);
+      const parsedData = analyzeResponse.data;
+      setResumePreviewData(parsedData);
       updateResumeData({
-        resumeData: analyzeData.data
+        resumeData: parsedData
       });
       
-      return analyzeData.data;
+      return parsedData;
     } catch (error) {
-      console.error("Erro ao processar currículo:", error);
-      toast.error("Ocorreu um erro ao processar seu currículo. Continuando com dados básicos.", {
+      console.error("Erro ao processar currículo no servidor:", error);
+      toast.error("Erro ao processar no servidor. Recorrendo ao processamento local.", {
         duration: 5000
       });
-      return null;
+      
+      // Recorrer ao processamento no navegador
+      try {
+        return await processResumeInBrowser();
+      } catch (fallbackError) {
+        console.error("Processamento alternativo também falhou:", fallbackError);
+        toast.error("Falha ao processar currículo. Tente novamente ou prossiga com entrada manual.", {
+          duration: 5000
+        });
+        return null;
+      }
     } finally {
       setIsGeneratingPreview(false);
     }
@@ -187,20 +205,26 @@ const PaymentStep = () => {
         resumeData: parsedData
       });
       
+      toast.success("Currículo processado com sucesso no navegador");
       return parsedData;
     } catch (error) {
-      console.error("Erro ao processar currículo:", error);
-      toast.error("Não foi possível processar o currículo. Usando dados básicos.", {
+      console.error("Erro ao processar currículo no navegador:", error);
+      toast.error("Não foi possível processar o currículo. Usando modelo básico.", {
         duration: 5000
       });
       
       // Usar dados básicos em caso de falha
-      const { createBasicResumeData } = await import('../../utils/resumeParse');
-      const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
-      
-      setResumePreviewData(basicData);
-      updateResumeData({ resumeData: basicData });
-      return null;
+      try {
+        const { createBasicResumeData } = await import('../../utils/resumeParse');
+        const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
+        
+        setResumePreviewData(basicData);
+        updateResumeData({ resumeData: basicData });
+        return basicData;
+      } catch (templateError) {
+        console.error("Erro ao criar modelo básico:", templateError);
+        return null;
+      }
     } finally {
       setIsGeneratingPreview(false);
     }

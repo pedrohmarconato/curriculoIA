@@ -151,66 +151,89 @@ async function analyzeResume(text: string): Promise<any> {
       : text;
     
     const prompt = `
-      Você é um analisador especializado em currículos profissionais. Analise o seguinte currículo e extraia as informações estruturadas:
-
+      Você é um analisador especializado em currículos profissionais, treinado para extrair informações estruturadas precisas.
+      
+      TEXTO DO CURRÍCULO:
       ${truncatedText}
-
-      Retorne apenas o JSON com a seguinte estrutura, sem comentários adicionais:
+      
+      INSTRUÇÕES DE EXTRAÇÃO:
+      1. Extraia apenas informações factuais presentes no currículo - não invente ou alucine informações
+      2. Para informações ausentes, use null ou array vazio [] conforme apropriado
+      3. Para datas, use o formato AAAA-MM se disponível, ou estime o ano se apenas informações parciais forem fornecidas
+      4. Para períodos de experiência onde a data final é "presente", "atual", "até o momento", etc., use "present" como valor
+      5. Limite descrições a 300 caracteres no máximo
+      6. Seja preciso e foque em informações chave
+      
+      ESTRUTURA DE SAÍDA REQUERIDA:
       {
         "personalInfo": {
-          "name": "string",
+          "name": "Nome completo do candidato",
           "contact": {
-            "email": "string",
-            "phone": "string?",
-            "location": "string?"
+            "email": "Endereço de email",
+            "phone": "Número de telefone (com código de país se presente)",
+            "location": "Cidade, Estado/Província, País ou localização geográfica"
           }
         },
-        "experience": [{
-          "company": "string",
-          "role": "string",
-          "period": {
-            "start": "YYYY-MM",
-            "end": "YYYY-MM | present"
-          },
-          "description": "string (max 300 chars)",
-          "achievements": ["string"]
-        }],
-        "education": [{
-          "institution": "string",
-          "degree": "string",
-          "field": "string",
-          "period": {
-            "start": "YYYY-MM",
-            "end": "YYYY-MM | present"
+        "experience": [
+          {
+            "company": "Nome da empresa",
+            "role": "Cargo ou posição",
+            "period": {
+              "start": "AAAA-MM", 
+              "end": "AAAA-MM ou 'present'"
+            },
+            "description": "Breve descrição do trabalho (max 300 caracteres)",
+            "achievements": ["Conquista notável 1", "Conquista notável 2", "..."]
           }
-        }],
+        ],
+        "education": [
+          {
+            "institution": "Nome da Escola/Universidade",
+            "degree": "Tipo de grau (ex: Bacharelado, Mestrado, Doutorado)",
+            "field": "Campo de estudo ou especialização",
+            "period": {
+              "start": "AAAA-MM",
+              "end": "AAAA-MM ou 'present'"
+            }
+          }
+        ],
         "skills": {
-          "technical": [{
-            "name": "string",
-            "level": "básico | intermediário | avançado | especialista"
-          }],
-          "interpersonal": [{
-            "name": "string",
-            "level": "básico | intermediário | avançado | especialista"
-          }],
-          "tools": [{
-            "name": "string",
-            "level": "básico | intermediário | avançado | especialista"
-          }]
+          "technical": [
+            {"name": "Nome da habilidade técnica", "level": "básico|intermediário|avançado|especialista"}
+          ],
+          "interpersonal": [
+            {"name": "Nome da soft skill", "level": "básico|intermediário|avançado|especialista"}
+          ],
+          "tools": [
+            {"name": "Nome da ferramenta ou software", "level": "básico|intermediário|avançado|especialista"}
+          ]
         },
-        "certifications": [{
-          "name": "string",
-          "issuer": "string",
-          "date": "YYYY-MM",
-          "expirationDate": "YYYY-MM?"
-        }],
-        "languages": [{
-          "name": "string",
-          "level": "básico | intermediário | avançado | fluente | nativo"
-        }]
+        "certifications": [
+          {
+            "name": "Nome da certificação",
+            "issuer": "Organização emissora",
+            "date": "AAAA-MM",
+            "expirationDate": "AAAA-MM ou null se não aplicável"
+          }
+        ],
+        "languages": [
+          {
+            "name": "Nome do idioma",
+            "level": "básico|intermediário|avançado|fluente|nativo"
+          }
+        ]
       }
       
-      Se não tiver uma informação específica, deixe o campo em branco ou forneça uma estimativa razoável com base no contexto.
+      DIRETRIZES ADICIONAIS:
+      - Se você puder inferir o nível de habilidade, mas ele não estiver explicitamente declarado, faça uma estimativa razoável baseada no contexto
+      - Para idiomas, use "básico", "intermediário", "avançado", "fluente", ou "nativo"
+      - Para habilidades técnicas e interpessoais, use "básico", "intermediário", "avançado", ou "especialista"
+      - Se o currículo não estiver em português, você pode usar equivalentes em inglês para níveis de habilidade e normalizar para português na saída final
+      - Priorize extrair todas as informações disponíveis mesmo que o formato varie da estrutura esperada
+      - Se encontrar múltiplas experiências profissionais ou formações, liste todas em ordem cronológica (mais recente primeiro)
+      - Para habilidades técnicas, categorize apropriadamente entre technical, interpersonal e tools
+      
+      Por favor, retorne APENAS a estrutura JSON sem comentários ou explicações adicionais. Assegure que o JSON seja válido e não tenha erros de sintaxe.
     `;
 
     console.log('[analyzeResume] Enviando solicitação para OpenAI');
@@ -398,8 +421,12 @@ Deno.serve(async (req) => {
 
     const { action, data } = body;
 
-    if (!action || !data) {
-      throw new Error('Parâmetros obrigatórios ausentes: action ou data');
+    if (!action) {
+      throw new Error('Parâmetro obrigatório ausente: action');
+    }
+    
+    if (!data && action !== 'analyze') {
+      throw new Error('Parâmetro obrigatório ausente: data');
     }
 
     console.log(`[${requestId}] Processando requisição ${action}:`, data);
@@ -407,10 +434,12 @@ Deno.serve(async (req) => {
     let result;
     switch (action) {
       case 'analyze': {
-        if (!data.text) {
-          throw new Error('Parâmetro obrigatório ausente: text');
+        // Verificar se temos dados para análise, seja no formato antigo ou novo
+        const textToAnalyze = data?.text || body.text;
+        if (!textToAnalyze) {
+          throw new Error('Texto para análise não fornecido');
         }
-        result = await analyzeResume(data.text);
+        result = await analyzeResume(textToAnalyze);
         break;
       }
 
