@@ -430,7 +430,7 @@ const PaymentStep = () => {
               </p>
               <button
                 onClick={() => {
-                  toast.info("Tentando extrair dados do seu currículo...");
+                  toast("Tentando extrair dados do seu currículo...");
                   setIsGeneratingPreview(true);
                   processResumeInBrowser()
                     .then(() => toast.success("Dados extraídos com sucesso!"))

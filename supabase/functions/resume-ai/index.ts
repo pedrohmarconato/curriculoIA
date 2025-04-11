@@ -1,9 +1,44 @@
 // Importações necessárias
 import { Configuration, OpenAIApi } from "npm:openai@4.28.0";
 import { parse as parsePdf } from "npm:pdf-parse@1.1.1";
-import puppeteer from "npm:puppeteer@22.3.0";
 
-// Extração de PDF aprimorada e robusta
+// Define o CORS headers para permitir chamadas da aplicação frontend
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Content-Type': 'application/json'
+};
+
+// Função para validar ambiente
+async function validateEnvironment() {
+  // Verificar variáveis de ambiente necessárias
+  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openaiApiKey) {
+    console.error('[validateEnvironment] OPENAI_API_KEY não configurada');
+    throw new Error('Configuração incompleta: API Key da OpenAI ausente');
+  }
+  
+  console.log('[validateEnvironment] Ambiente validado com sucesso');
+  return true;
+}
+
+// Função para inicializar o cliente da OpenAI
+async function initializeOpenAI() {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    throw new Error('API Key da OpenAI não configurada');
+  }
+  
+  const configuration = new Configuration({
+    apiKey: apiKey,
+  });
+  
+  const openaiClient = new OpenAIApi(configuration);
+  return openaiClient;
+}
+
+// Função para extrair texto de um PDF
 async function extractResumeFromPDF(url: string): Promise<string> {
   try {
     console.log('[extractResumeFromPDF] Iniciando extração de PDF:', url);
@@ -20,7 +55,9 @@ async function extractResumeFromPDF(url: string): Promise<string> {
     while (retryCount < maxRetries) {
       try {
         response = await fetch(url, {
-          timeout: 30000, // 30 segundos
+          headers: {
+            'Accept': 'application/pdf'
+          }
         });
         
         if (response.ok) break;
@@ -57,231 +94,47 @@ async function extractResumeFromPDF(url: string): Promise<string> {
     console.log(`[extractResumeFromPDF] PDF baixado com sucesso: ${pdfBuffer.byteLength} bytes`);
     
     // Processar o PDF
-    let data;
     try {
-      data = await parsePdf(new Uint8Array(pdfBuffer), {
-        // Opções avançadas
-        max: 2000000, // Limite máximo de caracteres
-        pagerender: render_page, // Função personalizada de renderização
-      });
+      const data = await parsePdf(new Uint8Array(pdfBuffer));
+      
+      if (!data?.text) {
+        throw new Error('Nenhum texto encontrado no PDF');
+      }
+      
+      // Validação do conteúdo extraído
+      const extractedText = data.text.trim();
+      if (extractedText.length < 100) {
+        console.warn('[extractResumeFromPDF] Texto extraído muito curto:', extractedText);
+        throw new Error('Conteúdo extraído insuficiente ou inválido');
+      }
+
+      console.log('[extractResumeFromPDF] Extração bem-sucedida, tamanho do texto:', extractedText.length);
+      return extractedText;
     } catch (parseError) {
       console.error('[extractResumeFromPDF] Erro ao processar PDF:', parseError);
       throw new Error(`Falha ao processar PDF: ${parseError.message}`);
     }
-
-    if (!data?.text) {
-      throw new Error('Nenhum texto encontrado no PDF');
-    }
-    
-    // Validação do conteúdo extraído
-    const extractedText = data.text.trim();
-    if (extractedText.length < 100) {
-      console.warn('[extractResumeFromPDF] Texto extraído muito curto:', extractedText);
-      throw new Error('Conteúdo extraído insuficiente ou inválido');
-    }
-
-    console.log('[extractResumeFromPDF] Extração bem-sucedida, tamanho do texto:', extractedText.length);
-    return extractedText;
   } catch (error) {
     console.error('[extractResumeFromPDF] Erro crítico:', error);
     throw error;
   }
 }
 
-// Função auxiliar para renderização de páginas do PDF
-function render_page(pageData) {
-  // Personalizar extração para melhorar qualidade
-  let render_options = {
-    normalizeWhitespace: true,
-    disableCombineTextItems: false
-  };
-  
-  return pageData.getTextContent(render_options)
-    .then(function(textContent) {
-      let text = '';
-      let lastY = -1;
-      let lastX = -1;
-      
-      // Processar itens de texto para preservar formatação
-      for (const item of textContent.items) {
-        if (lastY !== item.transform[5] || lastX > item.transform[4] + 30) {
-          text += '\n';
-        } else if (lastX !== item.transform[4]) {
-          text += ' ';
-        }
-        
-        text += item.str;
-        lastY = item.transform[5];
-        lastX = item.transform[4] + item.width;
-      }
-      
-      return text;
-    });
-}
-
-// Extração de LinkedIn aprimorada
+// Função para extrair dados do LinkedIn (simplificada)
 async function extractResumeFromLinkedIn(url: string): Promise<string> {
-  try {
-    console.log('[extractResumeFromLinkedIn] Iniciando extração do LinkedIn:', url);
-
-    if (!url || typeof url !== 'string') {
-      throw new Error('URL do LinkedIn inválida ou não fornecida');
-    }
-
-    // Validação rigorosa da URL
-    const linkedInRegex = /^https:\/\/([\w]+\.)?linkedin\.com\/in\/[A-z0-9_-]{5,100}\/?$/;
-    if (!linkedInRegex.test(url)) {
-      throw new Error('URL do LinkedIn inválida. Formato esperado: https://linkedin.com/in/username');
-    }
-
-    // Inicializar o navegador com configurações otimizadas para evitar detecção
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--window-size=1280,720',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      ],
-      timeout: 60000, // 60 segundos
-    }).catch(error => {
-      throw new Error(`Falha ao iniciar navegador: ${error.message}`);
-    });
-
-    try {
-      console.log('[extractResumeFromLinkedIn] Navegador inicializado');
-      
-      const page = await browser.newPage();
-      
-      // Configuração da página para parecer um usuário real
-      await page.setViewport({ width: 1280, height: 800 });
-      await page.setExtraHTTPHeaders({
-        'Accept-Language': 'en-US,en;q=0.9'
-      });
-      
-      // Desabilitar cache e interceptações que possam causar bloqueio
-      await page.setCacheEnabled(false);
-      
-      // Timeout para navegação
-      console.log('[extractResumeFromLinkedIn] Navegando para URL:', url);
-      await page.goto(url, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      }).catch(error => {
-        throw new Error(`Falha ao carregar perfil do LinkedIn: ${error.message}`);
-      });
-      
-      // Esperamos que elementos críticos sejam carregados
-      try {
-        await page.waitForSelector('h1', { timeout: 10000 });
-        await page.waitForFunction(() => document.body.innerText.length > 500, { timeout: 10000 });
-      } catch (timeoutError) {
-        console.warn('[extractResumeFromLinkedIn] Timeout ao aguardar carregamento completo:', timeoutError);
-        // Continuamos mesmo assim
-      }
-
-      // Extrair conteúdo com estrutura aprimorada
-      console.log('[extractResumeFromLinkedIn] Extraindo conteúdo do perfil');
-      const profileContent = await page.evaluate(() => {
-        // Extrair texto de uma seção específica, com fallbacks
-        const extractSectionContent = (sectionId, alternativeSelectors = []) => {
-          // Tenta primeiro pelo ID da seção
-          let section = document.getElementById(sectionId);
-          
-          // Se não encontrar pelo ID, tenta seletores alternativos
-          if (!section && alternativeSelectors.length) {
-            for (const selector of alternativeSelectors) {
-              const elements = document.querySelectorAll(selector);
-              if (elements.length) {
-                section = elements[0];
-                break;
-              }
-            }
-          }
-          
-          if (!section) return null;
-          
-          // Obtém todos os elementos com texto dentro da seção
-          const textNodes = Array.from(section.querySelectorAll('*'))
-            .filter(el => el.innerText && el.innerText.trim().length > 0);
-          
-          // Extrai texto mantendo alguma estrutura
-          return {
-            fullText: section.innerText.trim(),
-            // Extrai itens individuais (experiências, formação, etc)
-            items: textNodes
-              .filter(el => {
-                // Pegar apenas "containers" que parecem ser itens independentes
-                return el.children.length > 0 && 
-                      el.innerText.split('\n').length > 1 &&
-                      el.innerText.length > 30;
-              })
-              .map(el => el.innerText.trim())
-          };
-        };
-        
-        // Dados pessoais
-        const name = document.querySelector('h1')?.innerText.trim() || '';
-        const title = document.querySelector('div.pv-text-details__left-panel h2')?.innerText.trim() || '';
-        const location = document.querySelector('.pv-text-details__left-panel .text-body-small')?.innerText.trim() || '';
-        
-        // Coleta textos de contato se disponíveis
-        const contactInfo = Array.from(document.querySelectorAll('.pv-contact-info section'))
-          .map(section => ({
-            type: section.querySelector('.pv-contact-info__header')?.innerText.trim() || '',
-            value: section.querySelector('.pv-contact-info__ci-container')?.innerText.trim() || ''
-          }))
-          .filter(info => info.type && info.value);
-        
-        // Extrai as seções principais
-        return {
-          personalInfo: {
-            name,
-            title,
-            location,
-            contactInfo
-          },
-          about: document.querySelector('section#about')?.innerText.trim() || '',
-          experience: extractSectionContent('experience', ['.experience-section', 'section[data-section="experience"]']),
-          education: extractSectionContent('education', ['.education-section', 'section[data-section="education"]']),
-          skills: extractSectionContent('skills', ['.skills-section', 'section[data-section="skills"]']),
-          certifications: extractSectionContent('certifications', ['section[data-section="certifications"]']),
-          languages: extractSectionContent('languages', ['section[data-section="languages"]']),
-          recommendations: extractSectionContent('recommendations', ['section[data-section="recommendations"]']),
-          // Timestamp para debug e cache
-          extractedAt: new Date().toISOString()
-        };
-      }).catch(error => {
-        throw new Error(`Falha ao extrair conteúdo do perfil: ${error.message}`);
-      });
-
-      // Validação do conteúdo extraído
-      if (!profileContent.personalInfo || !profileContent.personalInfo.name) {
-        throw new Error('Dados essenciais do perfil não foram encontrados');
-      }
-
-      console.log('[extractResumeFromLinkedIn] Extração bem-sucedida');
-      return JSON.stringify(profileContent);
-    } finally {
-      // Sempre fecha o navegador para liberar recursos
-      await browser.close().catch(error => {
-        console.error('[extractResumeFromLinkedIn] Erro ao fechar navegador:', error);
-      });
-      console.log('[extractResumeFromLinkedIn] Navegador fechado');
-    }
-  } catch (error) {
-    console.error('[extractResumeFromLinkedIn] Erro crítico:', error);
-    throw error;
+  // Implementação simplificada
+  if (!url || !url.includes('linkedin.com/in/')) {
+    throw new Error('URL do LinkedIn inválida');
   }
+  
+  // Em produção, implementar com browser automation (puppeteer)
+  return JSON.stringify({
+    message: "Extração do LinkedIn não implementada completamente"
+  });
 }
 
-// Análise de currículo usando OpenAI
-async function analyzeResume(text: string): Promise<ResumeData> {
+// Função para analisar o currículo usando OpenAI
+async function analyzeResume(text: string): Promise<any> {
   try {
     if (!text || typeof text !== 'string') {
       throw new Error('Texto do currículo inválido ou não fornecido');
@@ -291,8 +144,8 @@ async function analyzeResume(text: string): Promise<ResumeData> {
     await validateEnvironment();
     const openaiClient = await initializeOpenAI();
 
-    // Prompt estruturado para limitar tamanho do input
-    const maxTextLength = 15000; // Limite para evitar exceder tokens da API
+    // Limitar tamanho do input
+    const maxTextLength = 15000;
     const truncatedText = text.length > maxTextLength 
       ? text.substring(0, maxTextLength) + '...[texto truncado devido ao tamanho]' 
       : text;
@@ -303,59 +156,59 @@ async function analyzeResume(text: string): Promise<ResumeData> {
       ${truncatedText}
 
       Retorne apenas o JSON com a seguinte estrutura, sem comentários adicionais:
-      ${JSON.stringify({
-        personalInfo: {
-          name: 'string',
-          contact: {
-            email: 'string',
-            phone: 'string?',
-            location: 'string?',
-          },
+      {
+        "personalInfo": {
+          "name": "string",
+          "contact": {
+            "email": "string",
+            "phone": "string?",
+            "location": "string?"
+          }
         },
-        experience: [{
-          company: 'string',
-          role: 'string',
-          period: {
-            start: 'YYYY-MM',
-            end: 'YYYY-MM | "present"',
+        "experience": [{
+          "company": "string",
+          "role": "string",
+          "period": {
+            "start": "YYYY-MM",
+            "end": "YYYY-MM | present"
           },
-          description: 'string (max 300 chars)',
-          achievements: ['string'],
+          "description": "string (max 300 chars)",
+          "achievements": ["string"]
         }],
-        education: [{
-          institution: 'string',
-          degree: 'string',
-          field: 'string',
-          period: {
-            start: 'YYYY-MM',
-            end: 'YYYY-MM | "present"',
-          },
+        "education": [{
+          "institution": "string",
+          "degree": "string",
+          "field": "string",
+          "period": {
+            "start": "YYYY-MM",
+            "end": "YYYY-MM | present"
+          }
         }],
-        skills: {
-          technical: [{
-            name: 'string',
-            level: 'básico | intermediário | avançado | especialista',
+        "skills": {
+          "technical": [{
+            "name": "string",
+            "level": "básico | intermediário | avançado | especialista"
           }],
-          interpersonal: [{
-            name: 'string',
-            level: 'básico | intermediário | avançado | especialista',
+          "interpersonal": [{
+            "name": "string",
+            "level": "básico | intermediário | avançado | especialista"
           }],
-          tools: [{
-            name: 'string',
-            level: 'básico | intermediário | avançado | especialista',
-          }],
+          "tools": [{
+            "name": "string",
+            "level": "básico | intermediário | avançado | especialista"
+          }]
         },
-        certifications: [{
-          name: 'string',
-          issuer: 'string',
-          date: 'YYYY-MM',
-          expirationDate: 'YYYY-MM?',
+        "certifications": [{
+          "name": "string",
+          "issuer": "string",
+          "date": "YYYY-MM",
+          "expirationDate": "YYYY-MM?"
         }],
-        languages: [{
-          name: 'string',
-          level: 'básico | intermediário | avançado | fluente | nativo',
-        }],
-      }, null, 2)}
+        "languages": [{
+          "name": "string",
+          "level": "básico | intermediário | avançado | fluente | nativo"
+        }]
+      }
       
       Se não tiver uma informação específica, deixe o campo em branco ou forneça uma estimativa razoável com base no contexto.
     `;
@@ -376,7 +229,6 @@ async function analyzeResume(text: string): Promise<ResumeData> {
             content: prompt,
           }],
           temperature: 0.3,
-          timeout: 60000, // 60 segundos
         });
         
         if (!completion?.choices?.[0]?.message?.content) {
@@ -419,8 +271,8 @@ async function analyzeResume(text: string): Promise<ResumeData> {
   }
 }
 
-// Geração visual do currículo
-async function generateVisualResume(resumeData: ResumeData, style: VisualStyle): Promise<string> {
+// Função para gerar currículo visual
+async function generateVisualResume(resumeData: any, style: any): Promise<string> {
   try {
     console.log('[generateVisualResume] Iniciando geração de currículo visual');
     await validateEnvironment();
@@ -476,7 +328,6 @@ async function generateVisualResume(resumeData: ResumeData, style: VisualStyle):
             content: prompt,
           }],
           temperature: 0.3,
-          timeout: 60000, // 60 segundos
         });
 
         if (!completion?.choices?.[0]?.message?.content) {
@@ -514,7 +365,7 @@ async function generateVisualResume(resumeData: ResumeData, style: VisualStyle):
   }
 }
 
-// Implementação completa do endpoint Deno
+// Servidor principal
 Deno.serve(async (req) => {
   const requestId = crypto.randomUUID();
   console.log(`[${requestId}] Nova requisição recebida: ${req.method}`);
@@ -551,7 +402,7 @@ Deno.serve(async (req) => {
       throw new Error('Parâmetros obrigatórios ausentes: action ou data');
     }
 
-    console.log(`[${requestId}] Processando requisição ${action} com dados:`, data);
+    console.log(`[${requestId}] Processando requisição ${action}:`, data);
 
     let result;
     switch (action) {
