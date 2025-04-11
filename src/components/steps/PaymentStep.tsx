@@ -1,39 +1,30 @@
-import React, { useState, useCallback, useEffect } from 'react';
+// src/components/steps/PaymentStep.tsx
+
+import React, { useState, useEffect } from 'react';
 import { useResume } from '../../contexts/ResumeContext';
 import { supabase } from '../../lib/supabase';
-import {
-  CreditCard,
-  Wallet,
-  CheckCircle2,
-  Shield,
-  Star,
-  Zap,
-  Clock,
-  Users,
-  Mail,
-  Phone,
-  Globe,
-  Award,
-  ArrowRight,
-  Loader2,
-  AlertCircle,
-  FileText
+import { 
+  CreditCard, 
+  Wallet, 
+  CheckCircle2, 
+  Shield, 
+  Star, 
+  Zap, 
+  Clock, 
+  Users, 
+  Mail, 
+  Phone, 
+  Globe, 
+  Award, 
+  ArrowRight, 
+  Loader2, 
+  AlertCircle, 
+  FileText,
+  ArrowLeft
 } from 'lucide-react';
 import { useCredits } from '../../hooks/useCredits';
 import toast from 'react-hot-toast';
-import { looksLikeResume } from '../../utils/extractPdfText';
-import { ResumeData } from '../../lib/resume-ai';
-
-// Mock da SDK do Mercado Pago - substitua depois pela importação real
-const MPWallet = ({ initialization, customization }) => {
-  return (
-    <button
-      className="px-8 py-4 font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 shadow-lg hover:shadow-xl transition-all duration-200"
-    >
-      {customization?.texts?.action || 'Pagar com Mercado Pago'}
-    </button>
-  );
-};
+import { processResume } from '../../utils/resumeProcessor'; // Importando do novo arquivo
 
 // Planos disponíveis
 const plans = [
@@ -74,6 +65,17 @@ const plans = [
   }
 ];
 
+// Mock da SDK do Mercado Pago - substitua depois pela importação real
+const MPWallet = ({ initialization, customization }: any) => {
+  return (
+    <button
+      className="px-8 py-4 font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 shadow-lg hover:shadow-xl transition-all duration-200"
+    >
+      {customization?.texts?.action || 'Pagar com Mercado Pago'}
+    </button>
+  );
+};
+
 const PaymentStep = () => {
   const { resumeData, updateResumeData } = useResume();
   const { credits, loading: creditsLoading } = useCredits(resumeData.user?.id);
@@ -83,152 +85,8 @@ const PaymentStep = () => {
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
   
   // Estado para a amostra do currículo
-  const [resumePreviewData, setResumePreviewData] = useState<ResumeData | null>(null);
+  const [resumePreviewData, setResumePreviewData] = useState<any>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-
-  /**
-   * Função para processar o currículo no servidor
-   */
-  const processResumeOnServer = useCallback(async () => {
-    if (!resumeData.resumeFile?.url) {
-      toast.error("URL do arquivo não disponível");
-      return null;
-    }
-
-    setIsGeneratingPreview(true);
-    try {
-      console.log("Processando currículo no servidor:", resumeData.resumeFile.url);
-      
-      // Extrair texto do PDF usando função backend
-      const { data: extractResponse, error: extractError } = await supabase.functions.invoke('resume-ai', {
-        body: {
-          action: 'extract',
-          data: { url: resumeData.resumeFile.url }
-        }
-      });
-
-      if (extractError) {
-        console.error('Erro ao extrair texto do PDF:', extractError);
-        throw new Error(`Falha ao extrair texto do PDF: ${extractError.message}`);
-      }
-
-      if (!extractResponse || !extractResponse.data) {
-        throw new Error('Resposta inválida da função de extração');
-      }
-
-      const extractedText = extractResponse.data;
-      console.log("Texto extraído com sucesso, analisando...");
-      
-      // Analisar currículo usando IA
-      const { data: analyzeResponse, error: analyzeError } = await supabase.functions.invoke('resume-ai', {
-        body: { 
-          action: 'analyze',
-          data: { text: extractedText }
-        }
-      });
-
-      if (analyzeError) {
-        console.error('Erro ao analisar currículo:', analyzeError);
-        throw new Error(`Falha ao analisar currículo: ${analyzeError.message}`);
-      }
-
-      if (!analyzeResponse || !analyzeResponse.data) {
-        throw new Error('Resposta inválida da função de análise');
-      }
-
-      console.log("Currículo analisado com sucesso");
-      
-      // Armazenar dados e atualizar contexto
-      const parsedData = analyzeResponse.data;
-      setResumePreviewData(parsedData);
-      updateResumeData({
-        resumeData: parsedData
-      });
-      
-      return parsedData;
-    } catch (error) {
-      console.error("Erro ao processar currículo no servidor:", error);
-      toast.error("Erro ao processar no servidor. Recorrendo ao processamento local.", {
-        duration: 5000
-      });
-      
-      // Recorrer ao processamento no navegador
-      try {
-        return await processResumeInBrowser();
-      } catch (fallbackError) {
-        console.error("Processamento alternativo também falhou:", fallbackError);
-        toast.error("Falha ao processar currículo. Tente novamente ou prossiga com entrada manual.", {
-          duration: 5000
-        });
-        return null;
-      }
-    } finally {
-      setIsGeneratingPreview(false);
-    }
-  }, [resumeData.resumeFile, updateResumeData]);
-
-  /**
-   * Função para processar o currículo no frontend
-   */
-  const processResumeInBrowser = useCallback(async () => {
-    setIsGeneratingPreview(true);
-    console.log("Processando currículo no navegador");
-    
-    try {
-      // Importar dinamicamente as funções necessárias
-      const { extractTextFromPdf, looksLikeResume } = await import('../../utils/extractPdfText');
-      const { parseResumeText, createBasicResumeData } = await import('../../utils/resumeParse');
-      
-      // Verificar se temos a URL do PDF
-      if (!resumeData.resumeFile?.url) {
-        console.error("URL do PDF não disponível");
-        throw new Error("URL do PDF não disponível");
-      }
-      
-      // Extrair o texto do PDF
-      const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
-      console.log("Texto extraído do PDF", extractedText.substring(0, 200) + "...");
-      
-      if (!looksLikeResume(extractedText)) {
-        console.warn("O texto extraído não parece ser um currículo");
-        toast.warning("O arquivo enviado talvez não seja um currículo válido. Faremos o melhor possível.");
-      }
-      
-      // Analisar o texto para extrair informações estruturadas
-      const parsedData = parseResumeText(extractedText, resumeData.user?.name, resumeData.user?.email);
-      console.log("Dados estruturados extraídos:", parsedData);
-      
-      // Armazenar os dados
-      setResumePreviewData(parsedData);
-      updateResumeData({
-        resumeData: parsedData
-      });
-      
-      toast.success("Currículo processado com sucesso no navegador");
-      return parsedData;
-    } catch (error) {
-      console.error("Erro ao processar currículo no navegador:", error);
-      toast.error("Não foi possível processar o currículo. Usando modelo básico.", {
-        duration: 5000
-      });
-      
-      // Usar dados básicos em caso de falha
-      try {
-        const { createBasicResumeData } = await import('../../utils/resumeParse');
-        const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
-        
-        setResumePreviewData(basicData);
-        updateResumeData({ resumeData: basicData });
-        return basicData;
-      } catch (templateError) {
-        console.error("Erro ao criar modelo básico:", templateError);
-        return null;
-      }
-    } finally {
-      setIsGeneratingPreview(false);
-    }
-  }, [resumeData.resumeFile, resumeData.user, updateResumeData]);
 
   /**
    * Inicializa a extração e análise de dados do currículo
@@ -246,18 +104,35 @@ const PaymentStep = () => {
         return;
       }
       
-      // Primeiro tentamos processar no backend
+      setIsGeneratingPreview(true);
+      
       try {
-        await processResumeOnServer();
+        // Usar o processador de currículos com fallback
+        const processedData = await processResume(
+          resumeData.resumeFile.url,
+          resumeData.user?.id,
+          resumeData.user?.name,
+          resumeData.user?.email
+        );
+        
+        if (processedData) {
+          setResumePreviewData(processedData);
+          updateResumeData({ resumeData: processedData });
+        } else {
+          throw new Error('Falha ao processar currículo');
+        }
       } catch (error) {
-        console.error("Erro ao processar no servidor, tentando no navegador:", error);
-        // Se falhar, tentamos processar no frontend
-        await processResumeInBrowser();
+        console.error('Erro ao processar currículo:', error);
+        toast.error('Erro ao processar currículo. Por favor, continue com a compra.', {
+          duration: 5000
+        });
+      } finally {
+        setIsGeneratingPreview(false);
       }
     };
     
     initializeResume();
-  }, [resumeData.resumeData, resumeData.resumeFile, processResumeOnServer, processResumeInBrowser]);
+  }, [resumeData.resumeData, resumeData.resumeFile, resumeData.user, updateResumeData]);
 
   /**
    * Função para criar preferência de pagamento
@@ -268,17 +143,35 @@ const PaymentStep = () => {
       const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
       if (!selectedPlanData) throw new Error('Plano não encontrado');
 
-      // Em produção, substitua por chamada real à API
-      // const response = await fetch('/api/create-preference', {...})
-      
-      // Simulação da resposta
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Simular ID de preferência
-      setPreferenceId('mockPreferenceId12345');
-      toast.success('Preferência de pagamento criada com sucesso!');
+      // Chamada à API real
+      try {
+        const { data, error } = await supabase.functions.invoke('create-preference', {
+          body: { 
+            title: `Plano ${selectedPlanData.name}`,
+            price: selectedPlanData.price,
+            quantity: 1
+          }
+        });
+
+        if (error) throw error;
+        
+        if (data?.id) {
+          setPreferenceId(data.id);
+          toast.success('Preferência de pagamento criada com sucesso!');
+        } else {
+          throw new Error('ID de preferência não retornado');
+        }
+      } catch (apiError) {
+        console.error('Erro na API de pagamento:', apiError);
+        
+        // Fallback para simulação em desenvolvimento
+        console.log('Usando simulação de pagamento para desenvolvimento');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        setPreferenceId('mockPreferenceId12345');
+        toast.success('(DEV) Preferência de pagamento simulada');
+      }
     } catch (error) {
-      console.error('Error creating preference:', error);
+      console.error('Erro ao criar preferência:', error);
       toast.error('Erro ao iniciar pagamento. Tente novamente.');
     } finally {
       setIsProcessing(false);
@@ -286,29 +179,109 @@ const PaymentStep = () => {
   };
 
   /**
+   * Função para processar pagamento manualmente no modo de desenvolvimento
+   */
+  const handleDevPayment = () => {
+    setIsProcessing(true);
+    
+    // Simulação de processamento de pagamento
+    setTimeout(() => {
+      toast.success('Pagamento processado com sucesso!');
+      
+      // Atualizar créditos do usuário (simulado)
+      const planCredits = plans.find(p => p.id === selectedPlan)?.credits || 5;
+      
+      // Atualizar o estado global
+      updateResumeData({
+        currentStep: resumeData.currentStep + 1,
+        selectedPlan,
+        credits: (resumeData.credits || 0) + planCredits
+      });
+      
+      setIsProcessing(false);
+    }, 2000);
+  };
+
+  /**
    * Função para lidar com o pagamento
    */
   const handlePayment = async () => {
+    // Em desenvolvimento, usar simulação
+    if (process.env.NODE_ENV === 'development') {
+      handleDevPayment();
+      return;
+    }
+    
+    // Em produção, criar preferência real
     if (paymentMethod === 'credit') {
       await createPreference();
     } else if (paymentMethod === 'pix') {
       setIsProcessing(true);
       try {
-        // Em produção, substitua por chamada real à API
-        // const response = await fetch('/api/create-pix', {...})
+        const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
+        if (!selectedPlanData) throw new Error('Plano não encontrado');
         
-        // Simulação da resposta
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Chamada à API de PIX
+        const { data, error } = await supabase.functions.invoke('create-pix', {
+          body: { 
+            planId: selectedPlan,
+            amount: selectedPlanData.price
+          }
+        });
+
+        if (error) throw error;
         
-        toast.success('QR Code PIX gerado com sucesso!');
-        // Normalmente aqui você mostraria o QR code
+        if (data) {
+          // Mostrar QR Code PIX
+          toast.success('QR Code PIX gerado com sucesso!');
+          // Implementar modal para mostrar QR Code
+        } else {
+          throw new Error('Dados PIX não retornados');
+        }
       } catch (error) {
-        console.error('Error creating PIX:', error);
+        console.error('Erro ao gerar PIX:', error);
         toast.error('Erro ao gerar PIX. Tente novamente.');
       } finally {
         setIsProcessing(false);
       }
     }
+  };
+
+  const handleProcessResumeManually = async () => {
+    if (!resumeData.resumeFile?.url) {
+      toast.error('Nenhum arquivo de currículo encontrado');
+      return;
+    }
+    
+    setIsGeneratingPreview(true);
+    try {
+      toast.loading('Processando seu currículo...', { id: 'processing-resume' });
+      
+      // Usar o processador com fallback
+      const processedData = await processResume(
+        resumeData.resumeFile.url,
+        resumeData.user?.id,
+        resumeData.user?.name,
+        resumeData.user?.email
+      );
+      
+      if (processedData) {
+        setResumePreviewData(processedData);
+        updateResumeData({ resumeData: processedData });
+        toast.success('Dados extraídos com sucesso!', { id: 'processing-resume' });
+      } else {
+        throw new Error('Falha ao processar currículo');
+      }
+    } catch (error) {
+      console.error('Erro na extração:', error);
+      toast.error('Falha ao extrair dados. Por favor, continue com a compra.', { id: 'processing-resume' });
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  };
+
+  const handleBack = () => {
+    updateResumeData({ currentStep: resumeData.currentStep - 1 });
   };
 
   return (
@@ -340,112 +313,112 @@ const PaymentStep = () => {
             </div>
           ) : resumePreviewData ? (
             <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-              {previewHtml ? (
-                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-              ) : (
-                <div className="p-6">
-                  <div className="flex justify-between items-center border-b border-gray-200 pb-4 mb-6">
+              <div className="p-6">
+                <div className="flex justify-between items-center border-b border-gray-200 pb-4 mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-primary">{resumePreviewData.personalInfo.name}</h2>
+                    <p className="text-gray-600">{resumePreviewData.experience[0]?.role || "Profissional"}</p>
+                  </div>
+                  <div className="flex flex-col items-end text-sm text-gray-600">
+                    <p>{resumePreviewData.personalInfo.contact.email}</p>
+                    {resumePreviewData.personalInfo.contact.phone && (
+                      <p>{resumePreviewData.personalInfo.contact.phone}</p>
+                    )}
+                    {resumePreviewData.personalInfo.contact.location && (
+                      <p>{resumePreviewData.personalInfo.contact.location}</p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="md:col-span-2 space-y-6">
+                    {/* Experiência */}
                     <div>
-                      <h2 className="text-2xl font-bold text-primary">{resumePreviewData.personalInfo.name}</h2>
-                      <p className="text-gray-600">{resumePreviewData.experience[0]?.role || "Profissional"}</p>
+                      <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
+                        <FileText className="w-5 h-5 text-accent" />
+                        Experiência Profissional
+                      </h3>
+                      <div className="space-y-4">
+                        {resumePreviewData.experience.map((exp: any, idx: number) => (
+                          <div key={idx} className="border-l-2 border-accent pl-4 py-1">
+                            <h4 className="font-medium">{exp.role}</h4>
+                            <p className="text-sm text-gray-600">{exp.company}</p>
+                            <p className="text-sm text-gray-500">
+                              {exp.period.start} - {exp.period.end === 'present' ? 'Atual' : exp.period.end}
+                            </p>
+                            <p className="mt-2 text-gray-700 line-clamp-2">{exp.description}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end text-sm text-gray-600">
-                      <p>{resumePreviewData.personalInfo.contact.email}</p>
-                      {resumePreviewData.personalInfo.contact.phone && (
-                        <p>{resumePreviewData.personalInfo.contact.phone}</p>
-                      )}
-                      {resumePreviewData.personalInfo.contact.location && (
-                        <p>{resumePreviewData.personalInfo.contact.location}</p>
-                      )}
+                    
+                    {/* Educação */}
+                    <div>
+                      <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
+                        <Award className="w-5 h-5 text-accent" />
+                        Educação
+                      </h3>
+                      <div className="space-y-4">
+                        {resumePreviewData.education.map((edu: any, idx: number) => (
+                          <div key={idx} className="border-l-2 border-accent pl-4 py-1">
+                            <h4 className="font-medium">{edu.degree} em {edu.field}</h4>
+                            <p className="text-sm text-gray-600">{edu.institution}</p>
+                            <p className="text-sm text-gray-500">
+                              {edu.period.start} - {edu.period.end === 'present' ? 'Atual' : edu.period.end}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2 space-y-6">
-                      {/* Experiência */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
-                          <FileText className="w-5 h-5 text-accent" />
-                          Experiência Profissional
-                        </h3>
-                        <div className="space-y-4">
-                          {resumePreviewData.experience.map((exp, idx) => (
-                            <div key={idx} className="border-l-2 border-accent pl-4 py-1">
-                              <h4 className="font-medium">{exp.role}</h4>
-                              <p className="text-sm text-gray-600">{exp.company}</p>
-                              <p className="text-sm text-gray-500">{exp.period.start} - {exp.period.end === 'present' ? 'Atual' : exp.period.end}</p>
-                              <p className="mt-2 text-gray-700">{exp.description}</p>
+                  <div className="space-y-6">
+                    {/* Habilidades */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold text-primary mb-4">Habilidades</h3>
+                      
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Técnicas</h4>
+                        <div className="space-y-2">
+                          {resumePreviewData.skills.technical.slice(0, 3).map((skill: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <span className="text-sm">{skill.name}</span>
+                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">{skill.level}</span>
                             </div>
                           ))}
                         </div>
                       </div>
                       
-                      {/* Educação */}
-                      <div>
-                        <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
-                          <Award className="w-5 h-5 text-accent" />
-                          Educação
-                        </h3>
-                        <div className="space-y-4">
-                          {resumePreviewData.education.map((edu, idx) => (
-                            <div key={idx} className="border-l-2 border-accent pl-4 py-1">
-                              <h4 className="font-medium">{edu.degree} em {edu.field}</h4>
-                              <p className="text-sm text-gray-600">{edu.institution}</p>
-                              <p className="text-sm text-gray-500">{edu.period.start} - {edu.period.end === 'present' ? 'Atual' : edu.period.end}</p>
+                      <div className="mt-4 space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Interpessoais</h4>
+                        <div className="space-y-2">
+                          {resumePreviewData.skills.interpersonal.slice(0, 3).map((skill: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <span className="text-sm">{skill.name}</span>
+                              <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">{skill.level}</span>
                             </div>
                           ))}
                         </div>
                       </div>
                     </div>
                     
-                    <div className="space-y-6">
-                      {/* Habilidades */}
+                    {/* Idiomas */}
+                    {resumePreviewData.languages && resumePreviewData.languages.length > 0 && (
                       <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-primary mb-4">Habilidades</h3>
-                        
-                        <div className="space-y-3">
-                          <h4 className="font-medium text-sm text-gray-700">Técnicas</h4>
-                          <div className="space-y-2">
-                            {resumePreviewData.skills.technical.map((skill, idx) => (
-                              <div key={idx} className="flex justify-between items-center">
-                                <span className="text-sm">{skill.name}</span>
-                                <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">{skill.level}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 space-y-3">
-                          <h4 className="font-medium text-sm text-gray-700">Interpessoais</h4>
-                          <div className="space-y-2">
-                            {resumePreviewData.skills.interpersonal.map((skill, idx) => (
-                              <div key={idx} className="flex justify-between items-center">
-                                <span className="text-sm">{skill.name}</span>
-                                <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">{skill.level}</span>
-                              </div>
-                            ))}
-                          </div>
+                        <h3 className="text-lg font-semibold text-primary mb-4">Idiomas</h3>
+                        <div className="space-y-2">
+                          {resumePreviewData.languages.map((lang: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center">
+                              <span className="text-sm">{lang.name}</span>
+                              <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">{lang.level}</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                      
-                      {/* Idiomas */}
-                      {resumePreviewData.languages && resumePreviewData.languages.length > 0 && (
-                        <div className="bg-gray-50 p-4 rounded-lg">
-                          <h3 className="text-lg font-semibold text-primary mb-4">Idiomas</h3>
-                          <div className="space-y-2">
-                            {resumePreviewData.languages.map((lang, idx) => (
-                              <div key={idx} className="flex justify-between items-center">
-                                <span className="text-sm">{lang.name}</span>
-                                <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">{lang.level}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           ) : (
             <div className="bg-gray-50 rounded-lg p-8 text-center">
@@ -455,17 +428,7 @@ const PaymentStep = () => {
                 Por favor, tente novamente.
               </p>
               <button
-                onClick={() => {
-                  toast("Tentando extrair dados do seu currículo...");
-                  setIsGeneratingPreview(true);
-                  processResumeInBrowser()
-                    .then(() => toast.success("Dados extraídos com sucesso!"))
-                    .catch(err => {
-                      console.error("Erro na extração:", err);
-                      toast.error("Falha ao extrair dados. Por favor, continue com a compra.");
-                    })
-                    .finally(() => setIsGeneratingPreview(false));
-                }}
+                onClick={handleProcessResumeManually}
                 disabled={isGeneratingPreview}
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto"
               >
@@ -639,16 +602,17 @@ const PaymentStep = () => {
       {/* Action Buttons */}
       <div className="flex justify-between items-center">
         <button
-          onClick={() => updateResumeData({ currentStep: resumeData.currentStep - 1 })}
-          className="px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+          onClick={handleBack}
+          className="px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
         >
-          Voltar
+          <ArrowLeft className="w-5 h-5" />
+          <span>Voltar</span>
         </button>
 
         {preferenceId ? (
           <MPWallet 
             initialization={{ preferenceId }}
-            customization={{ texts: { action: 'Pagar' } }}
+            customization={{ texts: { action: 'Pagar com Mercado Pago' } }}
           />
         ) : (
           <button

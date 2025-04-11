@@ -2,13 +2,108 @@
 import { Configuration, OpenAIApi } from "npm:openai@4.28.0";
 import { parse as parsePdf } from "npm:pdf-parse@1.1.1";
 
-// Define o CORS headers para permitir chamadas da aplicação frontend
+// supabase/functions/resume-ai/index.ts
+
+// Adicione este código no início do arquivo
+
+// Configuração CORS para permitir acesso local e de produção
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, range, slug',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
   'Content-Type': 'application/json'
 };
+
+// No início da função serve, adicione este tratamento para OPTIONS
+Deno.serve(async (req) => {
+  // Tratamento específico para requisições OPTIONS (CORS preflight)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders
+    });
+  }
+
+  // Resto do código existente...
+  // ...
+
+  // Certifique-se de que todas as respostas incluam os cabeçalhos CORS
+  return new Response(
+    JSON.stringify({ 
+      success: true,
+      data: result, // seu resultado existente
+      // outros campos...
+    }),
+    {
+      headers: corsHeaders,
+      status: 200,
+    }
+  );
+  
+  // Também certifique-se que as respostas de erro tenham os cabeçalhos CORS
+  // return new Response(
+  //   JSON.stringify(errorResponse),
+  //   {
+  //     headers: corsHeaders,
+  //     status: error.status || 400,
+  //   }
+  // );
+});
+
+// Função para lidar com requisições de preflight OPTIONS
+const handleOptions = () => {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders
+  });
+};
+
+// No handler principal, garantir que OPTIONS seja tratado corretamente
+Deno.serve(async (req) => {
+  const requestId = crypto.randomUUID();
+  console.log(`[${requestId}] Nova requisição recebida: ${req.method} ${req.url}`);
+
+  // Garantir que OPTIONS seja tratado primeiro
+  if (req.method === 'OPTIONS') {
+    return handleOptions();
+  }
+
+  try {
+    // Resto do seu código existente
+    // ...
+
+    return new Response(
+      JSON.stringify({ 
+        success: true,
+        data: result,
+        requestId
+      }),
+      {
+        headers: corsHeaders,
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error(`[${requestId}] Erro:`, error);
+    
+    const errorResponse = {
+      success: false,
+      error: error.message || 'Ocorreu um erro inesperado',
+      details: error.stack,
+      requestId,
+      timestamp: new Date().toISOString(),
+    };
+
+    return new Response(
+      JSON.stringify(errorResponse),
+      {
+        headers: corsHeaders,
+        status: error.status || 400,
+      }
+    );
+  }
+});
 
 // Função para validar ambiente
 async function validateEnvironment() {
