@@ -116,11 +116,13 @@ const PaymentStep = () => {
       console.log("Texto extraído com sucesso, analisando...");
       
       // Analisar currículo usando IA
+       console.log("Texto a ser enviado para análise:", extractData.text); // Log para depuração
       const { data: analyzeData, error: analyzeError } = await supabase.functions.invoke('resume-ai', {
-        body: {
+        body: { 
           action: 'analyze',
-          data: { text: extractData.data }
-        }
+           text: extractData.text 
+          }
+        
       });
 
       if (analyzeError) {
