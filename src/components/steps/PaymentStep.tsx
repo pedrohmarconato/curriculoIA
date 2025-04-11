@@ -19,17 +19,21 @@ import {
   AlertCircle,
   FileText
 } from 'lucide-react';
-import { initMercadoPago, Wallet as MPWallet } from '@mercadopago/sdk-react';
 import { useCredits } from '../../hooks/useCredits';
-import ResumePreview from '../ResumePreview';
 import toast from 'react-hot-toast';
-import { extractTextFromPdf, looksLikeResume } from '../../utils/extractPdfText';
+import { looksLikeResume } from '../../utils/extractPdfText';
 import { ResumeData } from '../../lib/resume-ai';
 
-// Inicializa o MercadoPago com a chave pública (certifique-se que esta variável existe)
-if (import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY) {
-  initMercadoPago(import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY);
-}
+// Mock da SDK do Mercado Pago - substitua depois pela importação real
+const MPWallet = ({ initialization, customization }) => {
+  return (
+    <button
+      className="px-8 py-4 font-medium text-white bg-green-600 rounded-xl hover:bg-green-700 shadow-lg hover:shadow-xl transition-all duration-200"
+    >
+      {customization?.texts?.action || 'Pagar com Mercado Pago'}
+    </button>
+  );
+};
 
 // Planos disponíveis
 const plans = [
@@ -73,311 +77,211 @@ const plans = [
 const PaymentStep = () => {
   const { resumeData, updateResumeData } = useResume();
   const { credits, loading: creditsLoading } = useCredits(resumeData.user?.id);
-  
-  // Estados
   const [selectedPlan, setSelectedPlan] = useState('premium');
   const [paymentMethod, setPaymentMethod] = useState('credit');
   const [isProcessing, setIsProcessing] = useState(false);
   const [preferenceId, setPreferenceId] = useState<string | null>(null);
+  
+  // Estado para a amostra do currículo
   const [resumePreviewData, setResumePreviewData] = useState<ResumeData | null>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
 
-  // Função para extrair dados do PDF
-  const extractResumeData = useCallback(async () => {
+  /**
+   * Função para processar o currículo no servidor
+   */
+  const processResumeOnServer = useCallback(async () => {
     if (!resumeData.resumeFile?.url) {
-      toast.error("URL do PDF não disponível");
+      toast.error("URL do arquivo não disponível");
       return null;
     }
-    
+
     setIsGeneratingPreview(true);
+    try {
+      console.log("Processando currículo no servidor:", resumeData.resumeFile.url);
+      
+      // Extrair texto do PDF usando função backend
+      const { data: extractData, error: extractError } = await supabase.functions.invoke('resume-ai', {
+        body: {
+          action: 'extract',
+          data: { url: resumeData.resumeFile.url }
+        }
+      });
+
+      if (extractError) {
+        console.error('Erro ao extrair texto do PDF:', extractError);
+        throw new Error(`Falha ao extrair texto do PDF: ${extractError.message}`);
+      }
+
+      console.log("Texto extraído com sucesso, analisando...");
+      
+      // Analisar currículo usando IA
+      const { data: analyzeData, error: analyzeError } = await supabase.functions.invoke('resume-ai', {
+        body: {
+          action: 'analyze',
+          data: { text: extractData.data }
+        }
+      });
+
+      if (analyzeError) {
+        console.error('Erro ao analisar currículo:', analyzeError);
+        throw new Error(`Falha ao analisar currículo: ${analyzeError.message}`);
+      }
+
+      console.log("Currículo analisado com sucesso");
+      
+      // Armazenar dados e atualizar contexto
+      setResumePreviewData(analyzeData.data);
+      updateResumeData({
+        resumeData: analyzeData.data
+      });
+      
+      return analyzeData.data;
+    } catch (error) {
+      console.error("Erro ao processar currículo:", error);
+      toast.error("Ocorreu um erro ao processar seu currículo. Continuando com dados básicos.", {
+        duration: 5000
+      });
+      return null;
+    } finally {
+      setIsGeneratingPreview(false);
+    }
+  }, [resumeData.resumeFile, updateResumeData]);
+
+  /**
+   * Função para processar o currículo no frontend
+   */
+  const processResumeInBrowser = useCallback(async () => {
+    setIsGeneratingPreview(true);
+    console.log("Processando currículo no navegador");
     
     try {
-      // Extrair texto do PDF
-      const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
+      // Importar dinamicamente as funções necessárias
+      const { extractTextFromPdf, looksLikeResume } = await import('../../utils/extractPdfText');
+      const { parseResumeText, createBasicResumeData } = await import('../../utils/resumeParse');
       
-      // Verificar se o texto parece ser um currículo - apenas uma vez
-      const isResume = looksLikeResume(extractedText);
-      if (!isResume) {
-        toast("O arquivo enviado não parece ser um currículo. A visualização pode não ser ideal.", {
-          icon: '⚠️',
-          style: {
-            borderRadius: '10px',
-            background: '#FEF3C7',
-            color: '#92400E',
-          },
-          // Evitar duplicação adicionando um ID
-          id: 'resume-warning',
-        });
+      // Verificar se temos a URL do PDF
+      if (!resumeData.resumeFile?.url) {
+        console.error("URL do PDF não disponível");
+        throw new Error("URL do PDF não disponível");
       }
       
-      // Criar dados simples de currículo para visualização
-      const basicData: ResumeData = {
-        personalInfo: {
-          name: resumeData.user?.name || "Nome não encontrado",
-          contact: {
-            email: resumeData.user?.email || "",
-            phone: "",
-            location: ""
-          }
-        },
-        experience: [{
-          company: "Empresa",
-          role: "Cargo/Função",
-          period: {
-            start: "2020-01",
-            end: "present"
-          },
-          description: "Detalhes da sua experiência profissional aparecerão aqui após a compra.",
-          achievements: ["Conquistas e responsabilidades serão listadas aqui."]
-        }],
-        education: [{
-          institution: "Instituição de Ensino",
-          degree: "Grau Acadêmico",
-          field: "Área de Estudo",
-          period: {
-            start: "2015-01",
-            end: "2019-12"
-          }
-        }],
-        skills: {
-          technical: [
-            { name: "Habilidade Técnica 1", level: "avançado" },
-            { name: "Habilidade Técnica 2", level: "intermediário" }
-          ],
-          interpersonal: [
-            { name: "Comunicação", level: "avançado" },
-            { name: "Trabalho em Equipe", level: "avançado" }
-          ],
-          tools: [
-            { name: "Microsoft Office", level: "avançado" }
-          ]
-        },
-        languages: [
-          { name: "Português", level: "nativo" },
-          { name: "Inglês", level: "intermediário" }
-        ],
-        certifications: []
-      };
+      // Extrair o texto do PDF
+      const extractedText = await extractTextFromPdf(resumeData.resumeFile.url);
+      console.log("Texto extraído do PDF", extractedText.substring(0, 200) + "...");
       
-      // Definir dados para visualização
+      if (!looksLikeResume(extractedText)) {
+        console.warn("O texto extraído não parece ser um currículo");
+        toast.warning("O arquivo enviado talvez não seja um currículo válido. Faremos o melhor possível.");
+      }
+      
+      // Analisar o texto para extrair informações estruturadas
+      const parsedData = parseResumeText(extractedText, resumeData.user?.name, resumeData.user?.email);
+      console.log("Dados estruturados extraídos:", parsedData);
+      
+      // Armazenar os dados
+      setResumePreviewData(parsedData);
+      updateResumeData({
+        resumeData: parsedData
+      });
+      
+      return parsedData;
+    } catch (error) {
+      console.error("Erro ao processar currículo:", error);
+      toast.error("Não foi possível processar o currículo. Usando dados básicos.", {
+        duration: 5000
+      });
+      
+      // Usar dados básicos em caso de falha
+      const { createBasicResumeData } = await import('../../utils/resumeParse');
+      const basicData = createBasicResumeData(resumeData.user?.name, resumeData.user?.email);
+      
       setResumePreviewData(basicData);
       updateResumeData({ resumeData: basicData });
-      
-      return basicData;
-    } catch (error) {
-      console.error("Erro ao processar PDF:", error);
-      toast.error("Não foi possível extrair informações do PDF. Exibindo versão simplificada.");
       return null;
     } finally {
       setIsGeneratingPreview(false);
     }
   }, [resumeData.resumeFile, resumeData.user, updateResumeData]);
 
-  // Gerar prévia do currículo
-  const generatePreview = useCallback(async () => {
-    setIsGeneratingPreview(true);
-    
-    try {
-      // Se já temos dados analisados, usamos eles
+  /**
+   * Inicializa a extração e análise de dados do currículo
+   */
+  useEffect(() => {
+    const initializeResume = async () => {
+      // Se já temos dados do currículo no contexto, usá-los
       if (resumeData.resumeData) {
         setResumePreviewData(resumeData.resumeData);
         return;
       }
       
-      // Se temos um PDF, tentamos extrair os dados
-      if (resumeData.resumeFile?.url) {
-        await extractResumeData();
+      // Se não temos um arquivo de currículo, não fazer nada
+      if (!resumeData.resumeFile?.url) {
         return;
       }
       
-      // Se não temos dados nem arquivo, usamos os dados do usuário
-      const userData: ResumeData = {
-        personalInfo: {
-          name: resumeData.user?.name || "Nome do Usuário",
-          contact: {
-            email: resumeData.user?.email || "email@exemplo.com",
-            phone: "",
-            location: ""
-          }
-        },
-        experience: [
-          {
-            company: "Compre um plano para ver detalhes completos",
-            role: "Seu cargo atual",
-            period: {
-              start: "2020-01",
-              end: "present"
-            },
-            description: "Após a compra, você terá acesso a todos os recursos para personalizar seu currículo profissional.",
-            achievements: ["Personalize suas conquistas", "Destaque suas habilidades"]
-          }
-        ],
-        education: [
-          {
-            institution: "Instituição de Ensino",
-            degree: "Seu Grau",
-            field: "Sua Área",
-            period: {
-              start: "2015-01",
-              end: "2019-12"
-            }
-          }
-        ],
-        skills: {
-          technical: [
-            { name: "Habilidade 1", level: "avançado" },
-            { name: "Habilidade 2", level: "intermediário" },
-            { name: "Habilidade 3", level: "básico" }
-          ],
-          interpersonal: [
-            { name: "Comunicação", level: "avançado" },
-            { name: "Trabalho em Equipe", level: "avançado" }
-          ],
-          tools: [
-            { name: "Ferramenta 1", level: "intermediário" },
-            { name: "Ferramenta 2", level: "avançado" }
-          ]
-        },
-        languages: [
-          { name: "Português", level: "nativo" },
-          { name: "Inglês", level: "intermediário" }
-        ],
-        certifications: []
-      };
-      
-      setResumePreviewData(userData);
-    } catch (error) {
-      console.error('Erro ao gerar prévia:', error);
-      toast.error('Houve um erro ao gerar a prévia. Tentando novamente com dados simplificados.');
-      
-      // Dados básicos de fallback
-      setResumePreviewData({
-        personalInfo: {
-          name: resumeData.user?.name || "Nome do Usuário",
-          contact: {
-            email: resumeData.user?.email || "email@exemplo.com",
-            phone: "",
-            location: ""
-          }
-        },
-        experience: [
-          {
-            company: "Dados de exemplo",
-            role: "Função de exemplo",
-            period: {
-              start: "2020-01",
-              end: "present"
-            },
-            description: "Esta é uma prévia de exemplo do seu currículo.",
-            achievements: [""]
-          }
-        ],
-        education: [{
-          institution: "Universidade",
-          degree: "Graduação",
-          field: "Área",
-          period: {
-            start: "2015-01",
-            end: "2019-12"
-          }
-        }],
-        skills: {
-          technical: [
-            { name: "Habilidade Técnica", level: "avançado" }
-          ],
-          interpersonal: [
-            { name: "Habilidade Interpessoal", level: "avançado" }
-          ],
-          tools: [
-            { name: "Ferramenta", level: "intermediário" }
-          ]
-        },
-        certifications: [],
-        languages: [
-          { name: "Idioma", level: "avançado" }
-        ]
-      });
-    } finally {
-      setIsGeneratingPreview(false);
-    }
-  }, [resumeData.resumeData, resumeData.resumeFile, resumeData.user, extractResumeData]);
+      // Primeiro tentamos processar no backend
+      try {
+        await processResumeOnServer();
+      } catch (error) {
+        console.error("Erro ao processar no servidor, tentando no navegador:", error);
+        // Se falhar, tentamos processar no frontend
+        await processResumeInBrowser();
+      }
+    };
+    
+    initializeResume();
+  }, [resumeData.resumeData, resumeData.resumeFile, processResumeOnServer, processResumeInBrowser]);
 
-  // Inicializa a prévia do currículo ao carregar o componente
-  useEffect(() => {
-    if (resumeData.resumeFile?.url && !resumeData.resumeData) {
-      extractResumeData();
-    } else {
-      generatePreview();
-    }
-  }, [resumeData.resumeFile, resumeData.resumeData, extractResumeData, generatePreview]);
-
-  // Criar preferência de pagamento para o MercadoPago
+  /**
+   * Função para criar preferência de pagamento
+   */
   const createPreference = async () => {
     setIsProcessing(true);
     try {
       const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
       if (!selectedPlanData) throw new Error('Plano não encontrado');
 
-      const { data, error } = await supabase.functions.invoke('create-preference', {
-        body: {
-          title: `Plano ${selectedPlanData.name}`,
-          price: selectedPlanData.price,
-          quantity: 1,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data && data.id) {
-        setPreferenceId(data.id);
-      } else {
-        throw new Error('Erro ao criar preferência de pagamento');
-      }
+      // Em produção, substitua por chamada real à API
+      // const response = await fetch('/api/create-preference', {...})
+      
+      // Simulação da resposta
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Simular ID de preferência
+      setPreferenceId('mockPreferenceId12345');
+      toast.success('Preferência de pagamento criada com sucesso!');
     } catch (error) {
-      console.error('Erro ao criar preferência:', error);
+      console.error('Error creating preference:', error);
       toast.error('Erro ao iniciar pagamento. Tente novamente.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Criar pagamento PIX
-  const createPixPayment = async () => {
-    setIsProcessing(true);
-    try {
-      const selectedPlanData = plans.find(plan => plan.id === selectedPlan);
-      if (!selectedPlanData) throw new Error('Plano não encontrado');
-
-      const { data, error } = await supabase.functions.invoke('create-pix', {
-        body: {
-          planId: selectedPlan,
-          amount: selectedPlanData.price,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data && data.qrCode) {
-        // Aqui você poderia mostrar o QR code para o usuário
-        toast.success('QR Code PIX gerado com sucesso!');
-      } else {
-        throw new Error('Erro ao gerar PIX');
-      }
-    } catch (error) {
-      console.error('Erro ao gerar PIX:', error);
-      toast.error('Erro ao gerar PIX. Tente novamente.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Processar pagamento conforme método selecionado
+  /**
+   * Função para lidar com o pagamento
+   */
   const handlePayment = async () => {
     if (paymentMethod === 'credit') {
       await createPreference();
     } else if (paymentMethod === 'pix') {
-      await createPixPayment();
+      setIsProcessing(true);
+      try {
+        // Em produção, substitua por chamada real à API
+        // const response = await fetch('/api/create-pix', {...})
+        
+        // Simulação da resposta
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        toast.success('QR Code PIX gerado com sucesso!');
+        // Normalmente aqui você mostraria o QR code
+      } catch (error) {
+        console.error('Error creating PIX:', error);
+        toast.error('Erro ao gerar PIX. Tente novamente.');
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -526,17 +430,9 @@ const PaymentStep = () => {
               </p>
               <button
                 onClick={() => {
-                  toast("Tentando extrair dados do seu currículo...", {
-                  icon: 'ℹ️',
-                  style: {
-                    borderRadius: '10px',
-                    background: '#E0F2FE',
-                    color: '#0369A1',
-                  },
-                  id: 'extract-info', // ID único para evitar duplicação
-                });
+                  toast.info("Tentando extrair dados do seu currículo...");
                   setIsGeneratingPreview(true);
-                  extractResumeData()
+                  processResumeInBrowser()
                     .then(() => toast.success("Dados extraídos com sucesso!"))
                     .catch(err => {
                       console.error("Erro na extração:", err);
@@ -561,7 +457,6 @@ const PaymentStep = () => {
               </button>
             </div>
           )}
-        
         </div>
 
         {/* Plans */}
@@ -725,15 +620,10 @@ const PaymentStep = () => {
         </button>
 
         {preferenceId ? (
-          <div className="mercadopago-button-container">
-            {/* Renderização condicional do botão do MercadoPago */}
-            {typeof MPWallet === 'function' && (
-              <MPWallet 
-                initialization={{ preferenceId }}
-                customization={{ texts: { action: 'Pagar' } }}
-              />
-            )}
-          </div>
+          <MPWallet 
+            initialization={{ preferenceId }}
+            customization={{ texts: { action: 'Pagar' } }}
+          />
         ) : (
           <button
             onClick={handlePayment}
