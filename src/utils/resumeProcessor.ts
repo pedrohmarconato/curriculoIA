@@ -2,7 +2,7 @@
 
 import { ResumeData } from '../lib/resume-ai';
 import { extractTextFromPdf, looksLikeResume } from './extractPdfText';
-import { parseResume } from './resumeParse'; // Corrected import, removed createBasicResumeDataed createBasicResumeData
+import { parseResumeText, createBasicResumeData } from './resumeParse';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -14,24 +14,6 @@ import toast from 'react-hot-toast';
  * @param userEmail Email do usuário (opcional)
  * @returns Dados estruturados do currículo ou null se falhar
  */
-// Helper function to create basic resume data from user info
-function createBasicResumeData(name?: string, email?: string): ResumeData {
-  // TODO: Refine the basic structure based on ResumeData definition
-  return {
-    name: name || '',
-    email: email || '',
-    // Initialize other fields as empty or with default values
-    phone: '',
-    location: '',
-    summary: '',
-    experience: [],
-    education: [],
-    skills: [],
-    languages: [],
-    links: [],
-    // Add any other required fields from ResumeData with default values
-  };
-}
 export async function processResume(
   url: string,
   userId?: string,

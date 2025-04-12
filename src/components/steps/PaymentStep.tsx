@@ -1,121 +1,279 @@
-// src/components/steps/PaymentStep.tsx
-import React, { useContext } from 'react';
-// TODO: Importe o contexto REAL de autenticação/usuário
-// import { AuthContext } from '../../contexts/AuthContext';
-
-// Exemplo de tipo para o usuário (ajuste conforme sua estrutura real)
-interface User {
-  id: string;
-  email: string; // Assumimos que o email é obrigatório para um usuário logado
-  name?: string;
-}
-
-// Exemplo de tipo para o contexto de autenticação (ajuste conforme sua estrutura real)
-interface AuthContextType {
-  user: User | null; // Usuário logado ou null
-  loading: boolean; // Indica carregamento inicial dos dados/sessão
-  isAuthenticated: boolean; // Flag explícita de autenticação
-}
-
-// Exemplo: Contexto mock para demonstração. Remova ou substitua pelo seu real.
-const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
+import React, { useState, useEffect } from 'react';
+import { useResume } from '../../contexts/ResumeContext';
+import { 
+  ArrowRight, 
+  ArrowLeft, 
+  Loader2, 
+  AlertCircle, 
+  FileText,
+  Award
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import { processResume } from '../../utils/resumeProcessor';
 
 const PaymentStep = () => {
-  // --- Obtenha dados do Contexto Real ---
-  // Descomente e ajuste conforme seu AuthContext real:
-  // const authContext = useContext(AuthContext);
-  // if (!authContext) {
-  //   // Isso não deveria acontecer se o Provider estiver configurado corretamente
-  //   throw new Error('AuthContext não encontrado. Verifique o AuthProvider.');
-  // }
-  // const { user, loading, isAuthenticated } = authContext;
-  // --- Fim do Contexto Real ---
+  const { resumeData, updateResumeData } = useResume();
+  const [resumePreviewData, setResumePreviewData] = useState<any>(null);
+  const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
 
-  // --- Simulação para desenvolvimento/teste (Remova ao usar contexto real) ---
-  const isAuthenticated = true; // Simula usuário autenticado
-  const loading = false; // Simula que dados carregaram
-  const user: User | null = isAuthenticated ? { id: '123', email: 'user@example.com', name: 'Test User' } : null; // Simula dados do usuário se autenticado
-  // --- Fim da Simulação ---
+  /**
+   * Inicializa a extração e análise de dados do currículo
+   */
+  useEffect(() => {
+    const initializeResume = async () => {
+      // Se já temos dados do currículo no contexto, usá-los
+      if (resumeData.resumeData) {
+        setResumePreviewData(resumeData.resumeData);
+        return;
+      }
+      
+      // Se não temos um arquivo de currículo, não fazer nada
+      if (!resumeData.resumeFile?.url) {
+        return;
+      }
+      
+      setIsGeneratingPreview(true);
+      
+      try {
+        // Usar o processador de currículos com fallback
+        const processedData = await processResume(
+          resumeData.resumeFile.url,
+          resumeData.user?.id,
+          resumeData.user?.name,
+          resumeData.user?.email
+        );
+        
+        if (processedData) {
+          setResumePreviewData(processedData);
+          updateResumeData({ resumeData: processedData });
+        } else {
+          throw new Error('Falha ao processar currículo');
+        }
+      } catch (error) {
+        console.error('Erro ao processar currículo:', error);
+        toast.error('Erro ao processar currículo. Por favor, continue.', {
+          duration: 5000
+        });
+      } finally {
+        setIsGeneratingPreview(false);
+      }
+    };
+    
+    initializeResume();
+  }, [resumeData.resumeData, resumeData.resumeFile, resumeData.user, updateResumeData]);
 
-  // 1. Estado de Carregamento Inicial
-  // Mostra um loader enquanto o AuthContext verifica a sessão, etc.
-  if (loading) {
-    return <div>Verificando sessão...</div>;
-  }
-
-  // 2. Verificação de Autenticação e Dados Essenciais
-  // Se não estiver autenticado ou (por algum erro) não houver dados do usuário, impede o acesso.
-  // Isso é uma salvaguarda, a proteção de rota deve ser a primeira linha de defesa.
-  if (!isAuthenticated || !user) {
-     console.error('Erro: Acesso não autorizado ou dados do usuário ausentes no PaymentStep.');
-     // Idealmente, um hook ou componente de Rota Protegida já teria redirecionado para /login
-     // Poderia adicionar um redirecionamento aqui como fallback:
-     // useEffect(() => { navigate('/login'); }, [navigate]);
-     return <div>Acesso não autorizado. Você será redirecionado para o login.</div>;
-  }
-
-  // A partir daqui, podemos assumir que `isAuthenticated` é true e `user` não é null.
-  // ... resto do código do componente (handleInitiatePayment, return JSX)
-
-  const handleInitiatePayment = () => {
-    // Lógica para iniciar o pagamento
-
-    // Acesso seguro ao email usando encadeamento opcional e verificação
-    // A linha abaixo é um exemplo de onde o erro pode ocorrer (linha 130 no seu código original)
-    const userEmail = user?.email; // Usar encadeamento opcional
-
-    // Verificar se o email existe antes de prosseguir
-    if (userEmail) {
-      console.log(`Iniciando processo de pagamento para o email: ${userEmail}`);
-      // ... chamar API de pagamento, etc.
-    } else {
-      console.error('Erro: Email do usuário não encontrado. Não é possível iniciar o pagamento.');
-      // Opcional: Mostrar uma mensagem de erro para o usuário
-      alert('Não foi possível encontrar seu email para iniciar o pagamento. Por favor, tente fazer login novamente.');
+  const handleProcessResumeManually = async () => {
+    if (!resumeData.resumeFile?.url) {
+      toast.error('Nenhum arquivo de currículo encontrado');
+      return;
+    }
+    
+    setIsGeneratingPreview(true);
+    try {
+      toast.loading('Processando seu currículo...', { id: 'processing-resume' });
+      
+      // Usar o processador com fallback
+      const processedData = await processResume(
+        resumeData.resumeFile.url,
+        resumeData.user?.id,
+        resumeData.user?.name,
+        resumeData.user?.email
+      );
+      
+      if (processedData) {
+        setResumePreviewData(processedData);
+        updateResumeData({ resumeData: processedData });
+        toast.success('Dados extraídos com sucesso!', { id: 'processing-resume' });
+      } else {
+        throw new Error('Falha ao processar currículo');
+      }
+    } catch (error) {
+      console.error('Erro na extração:', error);
+      toast.error('Falha ao extrair dados. Por favor, continue.', { id: 'processing-resume' });
+    } finally {
+      setIsGeneratingPreview(false);
     }
   };
 
-  // Adicionar uma verificação de carregamento antes de renderizar
-  if (loading) {
-     return <div>Carregando dados do usuário...</div>;
-  }
+  const handleBack = () => {
+    updateResumeData({ currentStep: resumeData.currentStep - 1 });
+  };
 
-  // Opcional: Verificar se o usuário existe após o carregamento
-  // if (!user) {
-  //   return <div>Erro: Usuário não encontrado. Por favor, faça login.</div>;
-  // }
+  const handleContinue = () => {
+    updateResumeData({ currentStep: resumeData.currentStep + 1 });
+  };
 
   return (
-    <div>
-      <h2>Etapa de Pagamento</h2>
-      {/* Exibe o email do usuário associado ao pagamento */}
-      <p>Pagamento para: <strong>{user.email}</strong></p>
-      <button
-        onClick={handleInitiatePayment}
-        // Desabilitar o botão se o email não estiver disponível
-        disabled={!user?.email || loading}
-      >
-        Prosseguir para Pagamento
-      </button>
-      {/* ... resto do JSX */}
+    <div className="max-w-6xl mx-auto space-y-12">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-gray-900 mb-3">Revisar Dados do Currículo</h2>
+        <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+          Verifique se as informações extraídas do seu currículo estão corretas. 
+          Você poderá editá-las na próxima etapa.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-lg p-8">
+        {isGeneratingPreview ? (
+          <div className="text-center py-12">
+            <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
+            <p className="text-gray-600">Processando seu currículo...</p>
+          </div>
+        ) : resumePreviewData ? (
+          <div>
+            <div className="flex justify-between items-center border-b border-gray-200 pb-4 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-primary">{resumePreviewData.personalInfo.name}</h2>
+                <p className="text-gray-600">{resumePreviewData.experience[0]?.role || "Profissional"}</p>
+              </div>
+              <div className="flex flex-col items-end text-sm text-gray-600">
+                <p>{resumePreviewData.personalInfo.contact.email}</p>
+                {resumePreviewData.personalInfo.contact.phone && (
+                  <p>{resumePreviewData.personalInfo.contact.phone}</p>
+                )}
+                {resumePreviewData.personalInfo.contact.location && (
+                  <p>{resumePreviewData.personalInfo.contact.location}</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-2 space-y-6">
+                {/* Experiência */}
+                <div>
+                  <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
+                    <FileText className="w-5 h-5 text-accent" />
+                    Experiência Profissional
+                  </h3>
+                  <div className="space-y-4">
+                    {resumePreviewData.experience.map((exp: any, idx: number) => (
+                      <div key={idx} className="border-l-2 border-accent pl-4 py-1">
+                        <h4 className="font-medium">{exp.role}</h4>
+                        <p className="text-sm text-gray-600">{exp.company}</p>
+                        <p className="text-sm text-gray-500">
+                          {exp.period.start} - {exp.period.end === 'present' ? 'Atual' : exp.period.end}
+                        </p>
+                        <p className="mt-2 text-gray-700 line-clamp-2">{exp.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Educação */}
+                <div>
+                  <h3 className="text-lg font-semibold text-primary flex items-center gap-2 mb-4">
+                    <Award className="w-5 h-5 text-accent" />
+                    Educação
+                  </h3>
+                  <div className="space-y-4">
+                    {resumePreviewData.education.map((edu: any, idx: number) => (
+                      <div key={idx} className="border-l-2 border-accent pl-4 py-1">
+                        <h4 className="font-medium">{edu.degree} em {edu.field}</h4>
+                        <p className="text-sm text-gray-600">{edu.institution}</p>
+                        <p className="text-sm text-gray-500">
+                          {edu.period.start} - {edu.period.end === 'present' ? 'Atual' : edu.period.end}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-6">
+                {/* Habilidades */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-semibold text-primary mb-4">Habilidades</h3>
+                  
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-sm text-gray-700">Técnicas</h4>
+                    <div className="space-y-2">
+                      {resumePreviewData.skills.technical.slice(0, 3).map((skill: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center">
+                          <span className="text-sm">{skill.name}</span>
+                          <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">{skill.level}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 space-y-3">
+                    <h4 className="font-medium text-sm text-gray-700">Interpessoais</h4>
+                    <div className="space-y-2">
+                      {resumePreviewData.skills.interpersonal.slice(0, 3).map((skill: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center">
+                          <span className="text-sm">{skill.name}</span>
+                          <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full">{skill.level}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Idiomas */}
+                {resumePreviewData.languages && resumePreviewData.languages.length > 0 && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold text-primary mb-4">Idiomas</h3>
+                    <div className="space-y-2">
+                      {resumePreviewData.languages.map((lang: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center">
+                          <span className="text-sm">{lang.name}</span>
+                          <span className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded-full">{lang.level}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-50 rounded-lg p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+            <p className="text-gray-500 mb-4">
+              Não foi possível gerar a prévia do currículo.
+              Por favor, tente novamente.
+            </p>
+            <button
+              onClick={handleProcessResumeManually}
+              disabled={isGeneratingPreview}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto"
+            >
+              {isGeneratingPreview ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Processando PDF...</span>
+                </>
+              ) : (
+                <>
+                  <FileText className="w-4 h-4 mr-1" />
+                  <span>Extrair Dados do PDF</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex justify-between items-center">
+        <button
+          onClick={handleBack}
+          className="px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Voltar</span>
+        </button>
+
+        <button
+          onClick={handleContinue}
+          className="px-8 py-4 font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 flex items-center gap-2 shadow-lg hover:shadow-xl transition-all duration-200"
+        >
+          <span>Continuar</span>
+          <ArrowRight className="w-5 h-5" />
+        </button>
+      </div>
     </div>
   );
 };
 
 export default PaymentStep;
-
-// Adicionando um Provider mock para o exemplo funcionar isoladamente
-// Em sua aplicação real, você terá seu próprio UserProvider
-export const MockUserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user] = React.useState<User | null>({ id: '123', email: 'test@example.com', name: 'Test User' });
-  const [loading] = React.useState<boolean>(false);
-
-  return (
-    <UserContext.Provider value={{ user, loading }}>
-      {children}
-    </UserContext.Provider>
-  );
-};
-
-// Nota: A linha do erro original (130) pode ter mudado de número com estas alterações.
-// O ponto crucial é a lógica dentro de handleInitiatePayment.

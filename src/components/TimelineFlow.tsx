@@ -6,7 +6,6 @@ import PaymentStep from './steps/PaymentStep';
 import GenerationStep from './steps/GenerationStep';
 import EditingStep from './steps/EditingStep';
 import DeliveryStep from './steps/DeliveryStep';
-import ResumeProcessingStep from './steps/ResumeProcessingStep'; // Importação da nova etapa
 
 const TimelineFlow = () => {
   const { resumeData } = useResume();
@@ -16,10 +15,9 @@ const TimelineFlow = () => {
     { id: 2, name: 'Upload', component: UploadStep },
     { id: 3, name: 'Personalização', component: PersonalizationStep },
     { id: 4, name: 'Pagamento', component: PaymentStep },
-    { id: 5, name: 'Processamento IA', component: ResumeProcessingStep }, // Nova etapa adicionada
-    { id: 6, name: 'Geração', component: GenerationStep },
-    { id: 7, name: 'Edição', component: EditingStep },
-    { id: 8, name: 'Entrega', component: DeliveryStep }
+    { id: 5, name: 'Geração', component: GenerationStep },
+    { id: 6, name: 'Edição', component: EditingStep },
+    { id: 7, name: 'Entrega', component: DeliveryStep }
   ];
 
   const currentStep = steps.find(step => step.id === resumeData.currentStep);

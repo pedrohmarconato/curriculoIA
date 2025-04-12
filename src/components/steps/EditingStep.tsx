@@ -40,8 +40,7 @@ const EditingStep = () => {
   };
 
   const handleNext = () => {
-    // Pula a etapa de pagamento (incrementa 2 em vez de 1)
-    updateResumeData({ currentStep: resumeData.currentStep + 2 });
+    updateResumeData({ currentStep: resumeData.currentStep + 1 });
   };
 
   const handleBack = () => {
