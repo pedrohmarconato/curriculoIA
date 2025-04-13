@@ -166,7 +166,7 @@ const PersonalizationStep = () => {
 
   const handleNext = () => {
     updateResumeData({
-      currentStep: resumeData.currentStep + 1,
+      currentStep: 5,
       personalization: {
         selectedStyle,
         selectedPalette,

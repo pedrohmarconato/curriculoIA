@@ -2,7 +2,7 @@ import { useResume } from '../contexts/ResumeContext';
 import LoginStep from './steps/LoginStep';
 import UploadStep from './steps/UploadStep';
 import PersonalizationStep from './steps/PersonalizationStep';
-import PaymentStep from './steps/PaymentStep';
+
 import GenerationStep from './steps/GenerationStep';
 import EditingStep from './steps/EditingStep';
 import DeliveryStep from './steps/DeliveryStep';
@@ -14,10 +14,9 @@ const TimelineFlow = () => {
     { id: 1, name: 'Login', component: LoginStep },
     { id: 2, name: 'Upload', component: UploadStep },
     { id: 3, name: 'Personalização', component: PersonalizationStep },
-    { id: 4, name: 'Pagamento', component: PaymentStep },
-    { id: 5, name: 'Geração', component: GenerationStep },
-    { id: 6, name: 'Edição', component: EditingStep },
-    { id: 7, name: 'Entrega', component: DeliveryStep }
+    { id: 4, name: 'Geração', component: GenerationStep },
+    { id: 5, name: 'Edição', component: EditingStep },
+    { id: 6, name: 'Entrega', component: DeliveryStep }
   ];
 
   const currentStep = steps.find(step => step.id === resumeData.currentStep);
