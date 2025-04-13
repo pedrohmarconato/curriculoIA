@@ -1,9 +1,8 @@
-// src/utils/resumeProcessor.ts
-
 import { ResumeData } from '../lib/resume-ai';
 import { extractTextFromPdf, looksLikeResume } from './extractPdfText';
 import { parseResumeText, createBasicResumeData } from './resumeParse';
 import { supabase } from '../lib/supabase';
+import { openai } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 /**
@@ -72,6 +71,12 @@ export async function processResume(
       throw new Error('Resposta vazia da função de análise');
     }
 
+    // Extrair dados do currículo
+    let resumeData = analyzeResponse.data;
+    
+    // Enriquecer com dados adicionais
+    resumeData = await enrichResumeData(resumeData, extractedText);
+
     // Registrar que a análise foi bem-sucedida
     try {
       if (userId) {
@@ -90,7 +95,7 @@ export async function processResume(
     }
 
     // Retornar os dados analisados
-    return analyzeResponse.data;
+    return resumeData;
   } catch (serverError) {
     // Se falhar o processamento no servidor, tentar no frontend
     console.warn('Processamento no servidor falhou, tentando no frontend:', serverError);
@@ -112,6 +117,126 @@ export async function processResume(
         return null;
       }
     }
+  }
+}
+
+/**
+ * Enriquece os dados do currículo com análise adicional
+ */
+async function enrichResumeData(resumeData: ResumeData, originalText: string): Promise<ResumeData> {
+  try {
+    // Adicionar objetivo profissional se não existir
+    if (!resumeData.objective) {
+      // Tentar extrair do texto original usando OpenAI
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: "Você é um especialista em recursos humanos que ajuda a criar currículos profissionais."
+            },
+            {
+              role: "user",
+              content: `Com base neste texto de currículo, crie um objetivo profissional conciso e impactante (máximo 2 frases):
+              
+              ${originalText.substring(0, 1500)}
+              
+              RETORNE APENAS O OBJETIVO, sem comentários adicionais.`
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 100,
+        });
+
+        if (completion.choices[0].message.content) {
+          resumeData.objective = {
+            summary: completion.choices[0].message.content.trim()
+          };
+        }
+      } catch (error) {
+        console.warn('Erro ao gerar objetivo profissional:', error);
+        // Fallback para objetivo genérico
+        resumeData.objective = {
+          summary: 'Profissional dedicado buscando aplicar minha experiência e conhecimentos para contribuir com o sucesso da organização enquanto desenvolvo minhas habilidades e avanço em minha carreira.'
+        };
+      }
+    }
+
+    // Adicionar detalhes de mercado para experiências
+    if (!resumeData.marketExperience && resumeData.experience.length > 0) {
+      try {
+        const enrichedDetails = [];
+        
+        // Para cada experiência, tentar extrair detalhes mais aprofundados
+        for (const exp of resumeData.experience) {
+          let extendedDescription = exp.description;
+          
+          // Se a descrição for muito curta, tentar enriquecê-la
+          if (exp.description.length < 150) {
+            try {
+              const completion = await openai.chat.completions.create({
+                model: "gpt-3.5-turbo",
+                messages: [
+                  {
+                    role: "system",
+                    content: "Você é um especialista em recursos humanos que ajuda a criar descrições detalhadas de experiências profissionais."
+                  },
+                  {
+                    role: "user",
+                    content: `Elabore esta descrição de experiência profissional com mais detalhes, mantendo um tom profissional (máximo 5 linhas):
+                    
+                    Cargo: ${exp.role}
+                    Empresa: ${exp.company}
+                    Descrição atual: ${exp.description}
+                    
+                    RETORNE APENAS A DESCRIÇÃO ELABORADA, sem comentários adicionais.`
+                  }
+                ],
+                temperature: 0.7,
+                max_tokens: 200,
+              });
+
+              if (completion.choices[0].message.content) {
+                extendedDescription = completion.choices[0].message.content.trim();
+              }
+            } catch (error) {
+              console.warn('Erro ao enriquecer descrição:', error);
+              // Manter a descrição original
+            }
+          }
+          
+          // Gerar palavras-chave
+          let keywords = `${exp.role.toLowerCase()}, ${exp.company.toLowerCase()}`;
+          
+          enrichedDetails.push({
+            company: exp.company,
+            extendedDescription,
+            keywords
+          });
+        }
+        
+        resumeData.marketExperience = {
+          details: enrichedDetails
+        };
+      } catch (error) {
+        console.warn('Erro ao criar detalhes de mercado:', error);
+        // Fallback para estrutura básica
+        resumeData.marketExperience = {
+          details: resumeData.experience.map(exp => ({
+            company: exp.company,
+            extendedDescription: exp.description,
+            keywords: exp.role.toLowerCase()
+          }))
+        };
+      }
+    }
+
+    return resumeData;
+  } catch (error) {
+    console.error('Erro ao enriquecer dados do currículo:', error);
+    // Retornar dados originais em caso de erro
+    return resumeData;
   }
 }
 
@@ -146,7 +271,11 @@ async function processResumeInBrowser(
   }
   
   // Analisar o texto para extrair informações estruturadas
-  const parsedData = parseResumeText(extractedText, userName, userEmail);
+  let parsedData = parseResumeText(extractedText, userName, userEmail);
+  
+  // Enriquecer com dados adicionais
+  parsedData = await enrichResumeData(parsedData, extractedText);
+  
   console.log('Dados estruturados extraídos localmente:', parsedData);
   
   toast.success('Currículo processado com sucesso no navegador');
@@ -307,9 +436,15 @@ export async function generateResumeHTML(
     </header>
     
     <div class="content">
-      <!-- Seções do currículo -->
+      <!-- Objetivo -->
+      ${resumeData.objective ? `
+      <section class="section">
+        <h2>Objetivo Profissional</h2>
+        <p>${resumeData.objective.summary}</p>
+      </section>
+      ` : ''}
       
-      <!-- Experiência Profissional -->
+      <!-- Experiência -->
       <section class="section">
         <h2>Experiência Profissional</h2>
         ${resumeData.experience.map(exp => `
@@ -331,7 +466,7 @@ export async function generateResumeHTML(
 
       <!-- Educação -->
       <section class="section">
-        <h2>Educação</h2>
+        <h2>Formação Acadêmica</h2>
         ${resumeData.education.map(edu => `
           <div class="education-item">
             <h3>${edu.degree} em ${edu.field}</h3>

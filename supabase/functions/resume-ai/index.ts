@@ -1,233 +1,3 @@
-// Importações necessárias
-import { Configuration, OpenAIApi } from "npm:openai@4.28.0";
-import { parse as parsePdf } from "npm:pdf-parse@1.1.1";
-
-// supabase/functions/resume-ai/index.ts
-
-// Adicione este código no início do arquivo
-
-// Configuração CORS para permitir acesso local e de produção
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, range, slug',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-  'Content-Type': 'application/json'
-};
-
-// No início da função serve, adicione este tratamento para OPTIONS
-Deno.serve(async (req) => {
-  // Tratamento específico para requisições OPTIONS (CORS preflight)
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders
-    });
-  }
-
-  // Resto do código existente...
-  // ...
-
-  // Certifique-se de que todas as respostas incluam os cabeçalhos CORS
-  return new Response(
-    JSON.stringify({ 
-      success: true,
-      data: result, // seu resultado existente
-      // outros campos...
-    }),
-    {
-      headers: corsHeaders,
-      status: 200,
-    }
-  );
-  
-  // Também certifique-se que as respostas de erro tenham os cabeçalhos CORS
-  // return new Response(
-  //   JSON.stringify(errorResponse),
-  //   {
-  //     headers: corsHeaders,
-  //     status: error.status || 400,
-  //   }
-  // );
-});
-
-// Função para lidar com requisições de preflight OPTIONS
-const handleOptions = () => {
-  return new Response(null, {
-    status: 204,
-    headers: corsHeaders
-  });
-};
-
-// No handler principal, garantir que OPTIONS seja tratado corretamente
-Deno.serve(async (req) => {
-  const requestId = crypto.randomUUID();
-  console.log(`[${requestId}] Nova requisição recebida: ${req.method} ${req.url}`);
-
-  // Garantir que OPTIONS seja tratado primeiro
-  if (req.method === 'OPTIONS') {
-    return handleOptions();
-  }
-
-  try {
-    // Resto do seu código existente
-    // ...
-
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        data: result,
-        requestId
-      }),
-      {
-        headers: corsHeaders,
-        status: 200,
-      }
-    );
-  } catch (error) {
-    console.error(`[${requestId}] Erro:`, error);
-    
-    const errorResponse = {
-      success: false,
-      error: error.message || 'Ocorreu um erro inesperado',
-      details: error.stack,
-      requestId,
-      timestamp: new Date().toISOString(),
-    };
-
-    return new Response(
-      JSON.stringify(errorResponse),
-      {
-        headers: corsHeaders,
-        status: error.status || 400,
-      }
-    );
-  }
-});
-
-// Função para validar ambiente
-async function validateEnvironment() {
-  // Verificar variáveis de ambiente necessárias
-  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!openaiApiKey) {
-    console.error('[validateEnvironment] OPENAI_API_KEY não configurada');
-    throw new Error('Configuração incompleta: API Key da OpenAI ausente');
-  }
-  
-  console.log('[validateEnvironment] Ambiente validado com sucesso');
-  return true;
-}
-
-// Função para inicializar o cliente da OpenAI
-async function initializeOpenAI() {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    throw new Error('API Key da OpenAI não configurada');
-  }
-  
-  const configuration = new Configuration({
-    apiKey: apiKey,
-  });
-  
-  const openaiClient = new OpenAIApi(configuration);
-  return openaiClient;
-}
-
-// Função para extrair texto de um PDF
-async function extractResumeFromPDF(url: string): Promise<string> {
-  try {
-    console.log('[extractResumeFromPDF] Iniciando extração de PDF:', url);
-
-    if (!url || typeof url !== 'string') {
-      throw new Error('URL do PDF inválida ou não fornecida');
-    }
-
-    // Download do PDF com recuperação de erros
-    let response;
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (retryCount < maxRetries) {
-      try {
-        response = await fetch(url, {
-          headers: {
-            'Accept': 'application/pdf'
-          }
-        });
-        
-        if (response.ok) break;
-        
-        console.warn(`[extractResumeFromPDF] Tentativa ${retryCount + 1} falhou: ${response.status} ${response.statusText}`);
-        retryCount++;
-        
-        // Esperar antes de tentar novamente (backoff exponencial)
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retryCount)));
-      } catch (fetchError) {
-        console.error(`[extractResumeFromPDF] Erro de fetch na tentativa ${retryCount + 1}:`, fetchError);
-        retryCount++;
-        
-        if (retryCount >= maxRetries) {
-          throw new Error(`Falha ao baixar PDF após ${maxRetries} tentativas: ${fetchError.message}`);
-        }
-        
-        // Esperar antes de tentar novamente
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retryCount)));
-      }
-    }
-
-    if (!response || !response.ok) {
-      throw new Error(`Falha ao baixar PDF: ${response?.statusText || 'Resposta inválida'}`);
-    }
-
-    const pdfBuffer = await response.arrayBuffer();
-    
-    // Verificar se temos conteúdo válido
-    if (pdfBuffer.byteLength === 0) {
-      throw new Error('PDF vazio recebido');
-    }
-    
-    console.log(`[extractResumeFromPDF] PDF baixado com sucesso: ${pdfBuffer.byteLength} bytes`);
-    
-    // Processar o PDF
-    try {
-      const data = await parsePdf(new Uint8Array(pdfBuffer));
-      
-      if (!data?.text) {
-        throw new Error('Nenhum texto encontrado no PDF');
-      }
-      
-      // Validação do conteúdo extraído
-      const extractedText = data.text.trim();
-      if (extractedText.length < 100) {
-        console.warn('[extractResumeFromPDF] Texto extraído muito curto:', extractedText);
-        throw new Error('Conteúdo extraído insuficiente ou inválido');
-      }
-
-      console.log('[extractResumeFromPDF] Extração bem-sucedida, tamanho do texto:', extractedText.length);
-      return extractedText;
-    } catch (parseError) {
-      console.error('[extractResumeFromPDF] Erro ao processar PDF:', parseError);
-      throw new Error(`Falha ao processar PDF: ${parseError.message}`);
-    }
-  } catch (error) {
-    console.error('[extractResumeFromPDF] Erro crítico:', error);
-    throw error;
-  }
-}
-
-// Função para extrair dados do LinkedIn (simplificada)
-async function extractResumeFromLinkedIn(url: string): Promise<string> {
-  // Implementação simplificada
-  if (!url || !url.includes('linkedin.com/in/')) {
-    throw new Error('URL do LinkedIn inválida');
-  }
-  
-  // Em produção, implementar com browser automation (puppeteer)
-  return JSON.stringify({
-    message: "Extração do LinkedIn não implementada completamente"
-  });
-}
-
 // Função para analisar o currículo usando OpenAI
 async function analyzeResume(text: string): Promise<any> {
   try {
@@ -258,6 +28,8 @@ async function analyzeResume(text: string): Promise<any> {
       4. Para períodos de experiência onde a data final é "presente", "atual", "até o momento", etc., use "present" como valor
       5. Limite descrições a 300 caracteres no máximo
       6. Seja preciso e foque em informações chave
+      7. Crie um objetivo profissional conciso baseado no conteúdo do currículo
+      8. Extraia detalhes ricos para a seção marketExperience que serão usados para tooltips
       
       ESTRUTURA DE SAÍDA REQUERIDA:
       {
@@ -268,6 +40,9 @@ async function analyzeResume(text: string): Promise<any> {
             "phone": "Número de telefone (com código de país se presente)",
             "location": "Cidade, Estado/Província, País ou localização geográfica"
           }
+        },
+        "objective": {
+          "summary": "Resumo conciso dos objetivos profissionais do candidato (1-2 frases)"
         },
         "experience": [
           {
@@ -316,7 +91,16 @@ async function analyzeResume(text: string): Promise<any> {
             "name": "Nome do idioma",
             "level": "básico|intermediário|avançado|fluente|nativo"
           }
-        ]
+        ],
+        "marketExperience": {
+          "details": [
+            {
+              "company": "Nome da empresa",
+              "extendedDescription": "Descrição detalhada da experiência para tooltips e displays expandidos",
+              "keywords": "palavras-chave,separadas,por,vírgula"
+            }
+          ]
+        }
       }
       
       DIRETRIZES ADICIONAIS:
@@ -327,6 +111,8 @@ async function analyzeResume(text: string): Promise<any> {
       - Priorize extrair todas as informações disponíveis mesmo que o formato varie da estrutura esperada
       - Se encontrar múltiplas experiências profissionais ou formações, liste todas em ordem cronológica (mais recente primeiro)
       - Para habilidades técnicas, categorize apropriadamente entre technical, interpersonal e tools
+      - O campo marketExperience deve conter descrições mais completas e ricas das experiências profissionais, para uso em tooltips e visualizações expandidas
+      - Se não conseguir extrair um objetivo profissional explícito, crie um breve resumo (1-2 frases) baseado na experiência e qualificações
       
       Por favor, retorne APENAS a estrutura JSON sem comentários ou explicações adicionais. Assegure que o JSON seja válido e não tenha erros de sintaxe.
     `;
@@ -388,7 +174,6 @@ async function analyzeResume(text: string): Promise<any> {
     throw error;
   }
 }
-
 // Função para gerar currículo visual
 async function generateVisualResume(resumeData: any, style: any): Promise<string> {
   try {
@@ -425,6 +210,9 @@ async function generateVisualResume(resumeData: any, style: any): Promise<string
       8. Seja totalmente responsivo para visualização em qualquer dispositivo
       9. Inclua meta tags para SEO e compartilhamento social
       10. Use HTML5 semântico e CSS moderno
+      11. Inclua o objetivo profissional em destaque, logo após as informações pessoais
+      12. Se existirem, utilize os dados detalhados de 'marketExperience' para criar tooltips ou seções expandidas
+      13. Crie uma versão print-friendly do currículo
 
       Retorne apenas o código HTML e CSS completo em um único arquivo, sem comentários adicionais ou explicações.
       O código deve estar pronto para uso, funcionando sem dependências externas.
@@ -482,126 +270,3 @@ async function generateVisualResume(resumeData: any, style: any): Promise<string
     throw error;
   }
 }
-
-// Servidor principal
-Deno.serve(async (req) => {
-  const requestId = crypto.randomUUID();
-  console.log(`[${requestId}] Nova requisição recebida: ${req.method}`);
-
-  try {
-    if (req.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders,
-      });
-    }
-
-    await validateEnvironment();
-
-    if (req.method !== 'POST') {
-      throw new Error(`Método ${req.method} não permitido`);
-    }
-
-    const contentType = req.headers.get('content-type');
-    if (!contentType?.includes('application/json')) {
-      throw new Error('Content-Type deve ser application/json');
-    }
-
-    let body;
-    try {
-      body = await req.json();
-    } catch (error) {
-      throw new Error(`Payload JSON inválido: ${error.message}`);
-    }
-
-    const { action, data } = body;
-
-    if (!action) {
-      throw new Error('Parâmetro obrigatório ausente: action');
-    }
-    
-    if (!data && action !== 'analyze') {
-      throw new Error('Parâmetro obrigatório ausente: data');
-    }
-
-    console.log(`[${requestId}] Processando requisição ${action}:`, data);
-
-    let result;
-    switch (action) {
-      case 'analyze': {
-        // Verificar se temos dados para análise, seja no formato antigo ou novo
-        const textToAnalyze = data?.text || body.text;
-        if (!textToAnalyze) {
-          throw new Error('Texto para análise não fornecido');
-        }
-        result = await analyzeResume(textToAnalyze);
-        break;
-      }
-
-      case 'generate': {
-        if (!data.resume || !data.style) {
-          throw new Error('Parâmetros obrigatórios ausentes: resume ou style');
-        }
-        result = await generateVisualResume(data.resume, data.style);
-        break;
-      }
-
-      case 'extract': {
-        if (!data.url) {
-          throw new Error('Parâmetro obrigatório ausente: url');
-        }
-        result = await extractResumeFromPDF(data.url);
-        break;
-      }
-
-      case 'linkedin': {
-        if (!data.url) {
-          throw new Error('Parâmetro obrigatório ausente: url');
-        }
-        result = await extractResumeFromLinkedIn(data.url);
-        break;
-      }
-
-      default:
-        throw new Error(`Ação inválida: ${action}`);
-    }
-
-    console.log(`[${requestId}] Requisição processada com sucesso`);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true,
-        data: result,
-        requestId
-      }),
-      {
-        headers: {
-          ...corsHeaders,
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-        },
-        status: 200,
-      }
-    );
-  } catch (error) {
-    console.error(`[${requestId}] Erro:`, error);
-    
-    const errorResponse = {
-      success: false,
-      error: error.message || 'Ocorreu um erro inesperado',
-      details: error.stack,
-      requestId,
-      timestamp: new Date().toISOString(),
-    };
-
-    return new Response(
-      JSON.stringify(errorResponse),
-      {
-        headers: {
-          ...corsHeaders,
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-        },
-        status: error.status || 400,
-      }
-    );
-  }
-});

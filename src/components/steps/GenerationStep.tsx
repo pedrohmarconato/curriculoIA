@@ -1,133 +1,240 @@
 import React, { useState, useEffect } from 'react';
 import { useResume } from '../../contexts/ResumeContext';
-import { Loader2 } from 'lucide-react';
+import { 
+  Loader2, 
+  CheckCircle2, 
+  AlertCircle,
+  FileText,
+  Cpu,
+  PenTool,
+  Layers
+} from 'lucide-react';
+import { processResume } from '../../utils/resumeProcessor';
+import ResumeCategories from './ResumeCategories';
+import toast from 'react-hot-toast';
 
 const GenerationStep = () => {
   const { resumeData, updateResumeData } = useResume();
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('preparing');
   const [isComplete, setIsComplete] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [processingDetails, setProcessingDetails] = useState('');
+  const [extractedResumeData, setExtractedResumeData] = useState<any>(null);
+  const [showCategoriesEditor, setShowCategoriesEditor] = useState(false);
 
   const steps = [
     { id: 'preparing', label: 'Preparando dados' },
-    { id: 'generating', label: 'Gerando currículo' },
+    { id: 'analyzing', label: 'Analisando currículo' },
+    { id: 'generating', label: 'Gerando conteúdo' },
     { id: 'optimizing', label: 'Otimizando layout' },
     { id: 'finalizing', label: 'Finalizando' }
   ];
 
+  // Iniciar processo de extração e análise do currículo
   useEffect(() => {
-    // Simulate generation process
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsComplete(true);
-          return 100;
+    const processResumeData = async () => {
+      try {
+        setIsLoading(true);
+        setProcessingDetails('Iniciando processamento do arquivo...');
+        
+        // Verificar se temos fonte de dados (PDF ou LinkedIn)
+        if (!resumeData.resumeFile?.url && !resumeData.linkedinProfile) {
+          throw new Error('Nenhuma fonte de dados encontrada');
         }
-        return prev + 2;
-      });
-    }, 100);
 
-    // Update current step based on progress
-    const stepInterval = setInterval(() => {
-      if (progress < 25) setCurrentStep('preparing');
-      else if (progress < 50) setCurrentStep('generating');
-      else if (progress < 75) setCurrentStep('optimizing');
-      else setCurrentStep('finalizing');
-    }, 100);
+        // Iniciar progresso
+        setProgress(10);
+        setCurrentStep('preparing');
+        setProcessingDetails('Extraindo dados do documento...');
+        
+        // Processar o currículo (PDF ou LinkedIn)
+        let processedData;
+        if (resumeData.resumeFile?.url) {
+          processedData = await processResume(
+            resumeData.resumeFile.url,
+            resumeData.user?.id,
+            resumeData.user?.name,
+            resumeData.user?.email
+          );
+        } else if (resumeData.linkedinProfile) {
+          // TODO: Implementar processamento específico para LinkedIn
+          setProcessingDetails('Extraindo dados do LinkedIn...');
+          // Simular processamento para fins de demonstração
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          processedData = null; // Substituir por dados reais
+        }
 
-    return () => {
-      clearInterval(interval);
-      clearInterval(stepInterval);
+        // Verificar se temos dados
+        if (!processedData) {
+          throw new Error('Não foi possível extrair dados do currículo');
+        }
+
+        // Atualizar progresso
+        setProgress(40);
+        setCurrentStep('analyzing');
+        setProcessingDetails('Analisando informações do currículo...');
+        
+        // Simular tempo de processamento da IA
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Atualizar progresso
+        setProgress(70);
+        setCurrentStep('generating');
+        setProcessingDetails('Gerando conteúdo otimizado...');
+
+        // Adicionar objetivo profissional se não existir
+        if (!processedData.objective) {
+          processedData.objective = {
+            summary: 'Profissional dedicado buscando aplicar minha experiência e habilidades em um ambiente desafiador e colaborativo.'
+          };
+        }
+
+        // Adicionar campo para detalhes de mercado
+        if (!processedData.marketExperience) {
+          processedData.marketExperience = {
+            details: processedData.experience.map((exp) => ({
+              company: exp.company,
+              extendedDescription: exp.description,
+              keywords: 'experiência profissional, ' + exp.role.toLowerCase()
+            }))
+          };
+        }
+
+        // Atualizar progresso
+        setProgress(90);
+        setCurrentStep('optimizing');
+        setProcessingDetails('Formatando categorias do currículo...');
+        
+        // Salvar dados processados
+        setExtractedResumeData(processedData);
+        
+        // Atualizar progresso
+        setProgress(100);
+        setCurrentStep('finalizing');
+        setProcessingDetails('Pronto para revisão!');
+        
+        // Exibir editor de categorias
+        setShowCategoriesEditor(true);
+        
+        toast.success('Currículo processado com sucesso!');
+      } catch (error) {
+        console.error('Erro ao processar currículo:', error);
+        toast.error('Erro ao processar currículo. Tente novamente.');
+        
+        // Criar dados básicos para não interromper o fluxo
+        const basicData = {
+          personalInfo: {
+            name: resumeData.user?.name || 'Seu Nome',
+            contact: {
+              email: resumeData.user?.email || '',
+              phone: '',
+              location: ''
+            }
+          },
+          objective: {
+            summary: 'Profissional dedicado buscando novas oportunidades.'
+          },
+          experience: [{
+            company: 'Empresa',
+            role: 'Cargo',
+            period: { start: '2020-01', end: 'present' },
+            description: 'Descreva suas responsabilidades e realizações.',
+            achievements: ['Conquista ou responsabilidade importante']
+          }],
+          education: [{
+            institution: 'Instituição de Ensino',
+            degree: 'Grau Acadêmico',
+            field: 'Área de Estudo',
+            period: { start: '2015-01', end: '2019-12' }
+          }],
+          skills: {
+            technical: [
+              { name: 'Habilidade Técnica', level: 'intermediário' }
+            ],
+            interpersonal: [
+              { name: 'Comunicação', level: 'avançado' }
+            ],
+            tools: [
+              { name: 'MS Office', level: 'avançado' }
+            ]
+          },
+          languages: [
+            { name: 'Português', level: 'nativo' },
+            { name: 'Inglês', level: 'intermediário' }
+          ],
+          certifications: [],
+          marketExperience: {
+            details: []
+          }
+        };
+        
+        setExtractedResumeData(basicData);
+        setShowCategoriesEditor(true);
+      } finally {
+        setIsLoading(false);
+      }
     };
-  }, [progress]);
 
-  const handleContinue = () => {
-    updateResumeData({ currentStep: resumeData.currentStep + 1 });
+    // Iniciar processamento
+    if (!extractedResumeData && !showCategoriesEditor) {
+      processResumeData();
+    }
+  }, [resumeData, extractedResumeData]);
+
+  // Atualizar categoria de dados do currículo
+  const handleCategoryUpdate = (category: string, data: any) => {
+    if (!extractedResumeData) return;
+    
+    const updatedData = {...extractedResumeData};
+    
+    switch(category) {
+      case 'personalInfo':
+        updatedData.personalInfo = data;
+        break;
+      case 'objective':
+        updatedData.objective = data;
+        break;
+      case 'experience':
+        updatedData.experience = data;
+        break;
+      case 'education':
+        updatedData.education = data;
+        break;
+      case 'skills':
+        if (!updatedData.skills) updatedData.skills = {};
+        updatedData.skills.technical = data;
+        break;
+      case 'softSkills':
+        if (!updatedData.skills) updatedData.skills = {};
+        updatedData.skills.interpersonal = data;
+        break;
+      case 'languages':
+        updatedData.languages = data;
+        break;
+      case 'certifications':
+        updatedData.certifications = data;
+        break;
+      case 'toolsAndTech':
+        if (!updatedData.skills) updatedData.skills = {};
+        updatedData.skills.tools = data;
+        break;
+      case 'marketExperience':
+        updatedData.marketExperience = data;
+        break;
+    }
+    
+    setExtractedResumeData(updatedData);
   };
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-8">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Gerando seu Currículo</h2>
-        <p className="mt-2 text-gray-600">
-          {isComplete 
-            ? 'Seu currículo foi gerado com sucesso!' 
-            : 'Por favor, aguarde enquanto processamos seu currículo'}
-        </p>
-      </div>
-
-      {/* Progress bar */}
-      <div className="space-y-2">
-        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-blue-600 transition-all duration-300 rounded-full"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <div className="text-right text-sm text-gray-500">
-          {progress}%
-        </div>
-      </div>
-
-      {/* Steps */}
-      <div className="space-y-4">
-        {steps.map((step) => (
-          <div 
-            key={step.id}
-            className={`flex items-center p-4 rounded-lg ${
-              currentStep === step.id 
-                ? 'bg-blue-50 border border-blue-200'
-                : progress >= steps.findIndex(s => s.id === step.id) * 25
-                  ? 'bg-green-50 border border-green-200'
-                  : 'bg-gray-50 border border-gray-200'
-            }`}
-          >
-            {currentStep === step.id ? (
-              <Loader2 className="w-5 h-5 text-blue-600 animate-spin mr-3" />
-            ) : progress >= steps.findIndex(s => s.id === step.id) * 25 ? (
-              <svg
-                className="w-5 h-5 text-green-500 mr-3"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            ) : (
-              <div className="w-5 h-5 border-2 border-gray-300 rounded-full mr-3" />
-            )}
-            <span className={`font-medium ${
-              currentStep === step.id 
-                ? 'text-blue-700'
-                : progress >= steps.findIndex(s => s.id === step.id) * 25
-                  ? 'text-green-700'
-                  : 'text-gray-500'
-            }`}>
-              {step.label}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Action button */}
-      {isComplete && (
-        <div className="flex justify-center pt-6">
-          <button
-            onClick={handleContinue}
-            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-          >
-            Continuar para Edição
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default GenerationStep;
+  // Concluir a edição e continuar para a próxima etapa
+  const handleComplete = () => {
+    // Atualizar os dados do currículo no contexto global
+    updateResumeData({ 
+      resumeData: extractedResumeData,
+      currentStep: resumeData.currentStep + 1 
+    });
+    
+    setIsComplete(true);
+    toast.success('Currículo finalizado com sucesso!');
+  };

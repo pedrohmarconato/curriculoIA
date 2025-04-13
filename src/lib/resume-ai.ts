@@ -9,6 +9,9 @@ export interface ResumeData {
       location?: string;
     };
   };
+  objective?: {
+    summary: string;
+  };
   experience: Array<{
     company: string;
     role: string;
@@ -52,6 +55,13 @@ export interface ResumeData {
     name: string;
     level: 'básico' | 'intermediário' | 'avançado' | 'fluente' | 'nativo';
   }>;
+  marketExperience?: {
+    details: Array<{
+      company: string;
+      extendedDescription: string;
+      keywords?: string;
+    }>;
+  };
 }
 
 export interface VisualStyle {
