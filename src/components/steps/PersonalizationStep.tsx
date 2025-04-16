@@ -166,7 +166,7 @@ const PersonalizationStep = () => {
 
   const handleNext = () => {
     updateResumeData({
-      currentStep: 5,
+      currentStep: 4, // Corrigido para ir para a etapa de Geração
       personalization: {
         selectedStyle,
         selectedPalette,

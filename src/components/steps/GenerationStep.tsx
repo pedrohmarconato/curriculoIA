@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { processResume } from '../../utils/resumeProcessor';
 import ResumeCategories from './ResumeCategories';
+import ResumeEditSections from '../ResumeEditSections';
 import toast from 'react-hot-toast';
 
 const GenerationStep = () => {
@@ -238,3 +239,129 @@ const GenerationStep = () => {
     setIsComplete(true);
     toast.success('Currículo finalizado com sucesso!');
   };
+
+  // NOVA ESTRUTURA DE ETAPAS
+  const visualSteps = [
+    { id: 'preparing', label: 'Preparação dos Dados', icon: FileText },
+    { id: 'generating', label: 'Gerando HTML', icon: Cpu },
+    { id: 'reviewing', label: 'Revisão de Estruturas', icon: Layers },
+    { id: 'publishing', label: 'Publicando seu currículo', icon: PenTool },
+    { id: 'finished', label: 'Finalizado', icon: CheckCircle2 }
+  ];
+
+  const [visualStep, setVisualStep] = useState('preparing');
+
+  // Estado para dados editáveis
+  const [editableResumeData, setEditableResumeData] = useState<any>(null);
+
+  // Simulação de recebimento dos dados da IA ao entrar na etapa de revisão
+  useEffect(() => {
+    if (visualStep === 'reviewing' && extractedResumeData) {
+      setEditableResumeData(extractedResumeData);
+    }
+  }, [visualStep, extractedResumeData]);
+
+  // Animação de transição entre etapas
+  const handleNextStep = () => {
+    const idx = visualSteps.findIndex(s => s.id === visualStep);
+    if (idx < visualSteps.length - 1) setVisualStep(visualSteps[idx + 1].id);
+  };
+
+  // Exemplo de animação para etapa ativa
+  const StepBox = ({ step, active, children }: any) => (
+    <div
+      className={`relative flex flex-col items-center justify-center w-full max-w-md mx-auto my-2 px-4 py-3 rounded-xl shadow card transition-all duration-500 bg-white/90 dark:bg-darkSurface/90 border border-accent/20 dark:border-darkAccent/25
+        ${active ? 'scale-105 z-10 ring-2 ring-accent/30 dark:ring-darkAccent/30 animate-fadeInUp' : 'opacity-80 grayscale'}
+        ${!active ? 'cursor-pointer hover:opacity-100 hover:scale-100' : ''}`}
+      style={{ minHeight: active ? 170 : 56, maxHeight: active ? 400 : 56, overflow: 'hidden', transition: 'all 0.4s cubic-bezier(.4,2,.6,1)' }}
+      onClick={() => !active && setVisualStep(step.id)}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <step.icon size={22} className="text-accent dark:text-darkAccent" />
+        <h2 className="text-base font-bold tracking-wide">{step.label}</h2>
+      </div>
+      {active && <div className="w-full">{children}</div>}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[80vh] w-full py-8">
+      {visualSteps.map((step) => (
+        <StepBox key={step.id} step={step} active={visualStep === step.id}>
+          {visualStep === 'preparing' && (
+            <div className="flex flex-col gap-3 items-center animate-fadeInUp">
+              <p className="mb-2 text-center text-base font-medium text-primary dark:text-darkPrimary">
+                Extraindo e analisando seu PDF e/ou LinkedIn para preencher todas as categorias profissionais…
+              </p>
+              <ul className="text-left text-sm font-franie">
+                <li>• Cabeçalho Profissional</li>
+                <li>• Resumo Profissional</li>
+                <li>• Competências Centrais e Técnicas</li>
+                <li>• Experiência Profissional</li>
+                <li>• Formação Acadêmica</li>
+                <li>• Seção de Diferenciação</li>
+                <li>• Elemento Final de Engajamento</li>
+              </ul>
+              <div className="mt-6 flex flex-col items-center">
+                <Loader2 className="animate-spin text-accent dark:text-darkAccent" size={36} />
+                <span className="mt-2 text-xs text-gray-500 dark:text-darkSecondary">Preparando dados…</span>
+              </div>
+            </div>
+          )}
+          {visualStep === 'generating' && (
+            <div className="flex flex-col items-center animate-fadeInUp">
+              <p className="mb-4 text-center">Gerando HTML do currículo…</p>
+              <Loader2 className="animate-spin text-accent dark:text-darkAccent" size={32} />
+            </div>
+          )}
+          {visualStep === 'reviewing' && (
+            <div className="flex flex-col items-center animate-fadeInUp w-full">
+              <p className="mb-4 text-center font-semibold">Revise e edite cada seção do seu currículo gerado pela IA:</p>
+              {editableResumeData ? (
+                <ResumeEditSections
+                  resumeData={editableResumeData}
+                  onChange={setEditableResumeData}
+                />
+              ) : (
+                <Loader2 className="animate-spin text-accent dark:text-darkAccent" size={32} />
+              )}
+              <button
+                className="btn-primary mt-6"
+                onClick={handleNextStep}
+                type="button"
+              >
+                Publicar currículo
+              </button>
+            </div>
+          )}
+          {visualStep === 'publishing' && (
+            <div className="flex flex-col items-center animate-fadeInUp">
+              <p className="mb-4 text-center">Publicando seu currículo…</p>
+              <Loader2 className="animate-spin text-accent dark:text-darkAccent" size={32} />
+            </div>
+          )}
+          {visualStep === 'finished' && (
+            <div className="flex flex-col items-center animate-fadeInUp">
+              <CheckCircle2 size={40} className="text-green-500 mb-2" />
+              <p className="text-lg font-bold">Currículo pronto!</p>
+              <span className="text-sm text-gray-500 dark:text-darkSecondary">Você pode revisar, editar ou baixar seu currículo agora.</span>
+            </div>
+          )}
+        </StepBox>
+      ))}
+      {/* Botão de simulação para avançar etapas (remover depois de integrar com backend real) */}
+      {visualStep !== 'reviewing' && visualStep !== 'finished' && (
+        <button
+          className="btn-primary mt-8"
+          onClick={handleNextStep}
+          type="button"
+          disabled={visualStep === 'finished'}
+        >
+          Próxima etapa
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default GenerationStep;

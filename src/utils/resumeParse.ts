@@ -1,3 +1,12 @@
+import { ResumeData } from '../lib/resume-ai';
+
+// Funções utilitárias básicas para parsing, caso não existam implementações reais
+function detectName(text: string): string | null { return null; }
+function detectEmail(text: string): string | null { return null; }
+function detectPhone(text: string): string | null { return null; }
+function detectLocation(text: string): string | null { return null; }
+function extractObjective(text: string): string | null { return null; }
+
 /**
  * Analisa um currículo a partir do texto extraído
  */
@@ -30,3 +39,61 @@ export const parseResumeText = (text: string, userName?: string, userEmail?: str
       details: []
     }
   };
+  // FIM do preenchimento do objeto resumeData
+  return resumeData;
+};
+
+/**
+ * Cria dados básicos de currículo para fallback
+ */
+export function createBasicResumeData(userName?: string, userEmail?: string): ResumeData {
+  return {
+    personalInfo: {
+      name: userName || 'Seu Nome',
+      contact: {
+        email: userEmail || '',
+        phone: '',
+        location: ''
+      }
+    },
+    objective: {
+      summary: 'Profissional dedicado buscando novas oportunidades.'
+    },
+    experience: [
+      {
+        company: 'Empresa',
+        role: 'Cargo',
+        period: { start: '2020-01', end: 'present' },
+        description: 'Descreva suas responsabilidades e realizações.',
+        achievements: ['Conquista ou responsabilidade importante']
+      }
+    ],
+    education: [
+      {
+        institution: 'Instituição de Ensino',
+        degree: 'Grau Acadêmico',
+        field: 'Área de Estudo',
+        period: { start: '2015-01', end: '2019-12' }
+      }
+    ],
+    skills: {
+      technical: [
+        { name: 'Habilidade Técnica', level: 'intermediário' }
+      ],
+      interpersonal: [
+        { name: 'Comunicação', level: 'avançado' }
+      ],
+      tools: [
+        { name: 'MS Office', level: 'avançado' }
+      ]
+    },
+    languages: [
+      { name: 'Português', level: 'nativo' },
+      { name: 'Inglês', level: 'intermediário' }
+    ],
+    certifications: [],
+    marketExperience: {
+      details: []
+    }
+  };
+}

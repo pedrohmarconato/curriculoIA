@@ -4,11 +4,20 @@
 
 @layer base {
   body {
-    @apply antialiased bg-background text-primary font-sans;
+    @apply antialiased font-sans bg-background text-primary transition-colors duration-300;
+  }
+
+  body.dark {
+    @apply bg-darkBackground text-darkPrimary;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-franie;
+    @apply text-primary dark:text-darkPrimary;
+  }
+
+  ::selection {
+    @apply bg-accent text-white dark:bg-darkAccent dark:text-darkBackground;
   }
 }
 
@@ -26,19 +35,27 @@
   }
 
   .glass-card {
-    @apply bg-white/80 backdrop-blur-sm border border-white/20 shadow-glass;
+    @apply bg-white/80 dark:bg-darkSurface/80 backdrop-blur-sm border border-white/20 dark:border-darkSecondary/30 shadow-glass;
   }
 
   .input-field {
-    @apply mt-1 block w-full rounded-lg border-0 bg-white/50 backdrop-blur-sm px-4 py-2.5 text-gray-900 shadow-sm ring-1 ring-inset ring-secondary placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-accent sm:text-sm sm:leading-6 transition-all duration-200;
+    @apply mt-1 block w-full rounded-lg border-0 bg-white/50 dark:bg-darkSurface/70 backdrop-blur-sm px-4 py-2.5 text-gray-900 dark:text-darkPrimary shadow-sm ring-1 ring-inset ring-secondary dark:ring-darkSecondary placeholder:text-gray-400 dark:placeholder:text-darkSecondary focus:ring-2 focus:ring-inset focus:ring-accent dark:focus:ring-darkAccent sm:text-sm sm:leading-6 transition-all duration-200;
   }
 
   .btn-primary {
-    @apply px-6 py-2.5 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition-colors duration-200 shadow-sm hover:shadow-md font-franie;
+    @apply px-6 py-2.5 text-sm font-medium text-white bg-accent dark:bg-darkAccent rounded-lg hover:bg-accent/90 dark:hover:bg-darkAccent/80 transition-colors duration-200 shadow-sm hover:shadow-md font-franie;
   }
 
   .btn-secondary {
-    @apply px-6 py-2.5 text-sm font-medium text-primary bg-white rounded-lg hover:bg-gray-50 transition-colors duration-200 border border-secondary shadow-sm hover:shadow-md font-franie;
+    @apply px-6 py-2.5 text-sm font-medium text-primary dark:text-darkPrimary bg-white dark:bg-darkSurface rounded-lg hover:bg-gray-50 dark:hover:bg-darkSurface/80 transition-colors duration-200 border border-secondary dark:border-darkSecondary shadow-sm hover:shadow-md font-franie;
+  }
+
+  .card {
+    @apply bg-background dark:bg-darkSurface text-primary dark:text-darkPrimary rounded-lg shadow-md p-6 transition-colors duration-300;
+  }
+
+  .section {
+    @apply bg-white dark:bg-darkSurface/90 rounded-xl shadow p-4 mb-6 transition-colors duration-300;
   }
 }
 
@@ -67,4 +84,14 @@
   100% {
     transform: translateY(0px) rotate(0deg);
   }
+}
+
+/* Scrollbar styling for dark mode */
+body.dark ::-webkit-scrollbar {
+  width: 10px;
+  background: #23272f;
+}
+body.dark ::-webkit-scrollbar-thumb {
+  background: #444857;
+  border-radius: 8px;
 }

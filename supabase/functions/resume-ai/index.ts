@@ -16,105 +16,80 @@ async function analyzeResume(text: string): Promise<any> {
       : text;
     
     const prompt = `
-      Você é um analisador especializado em currículos profissionais, treinado para extrair informações estruturadas precisas.
-      
+      Você é um analisador especialista em currículos profissionais, treinado para extrair informações estruturadas de alto padrão internacional.
+
       TEXTO DO CURRÍCULO:
       ${truncatedText}
-      
+
       INSTRUÇÕES DE EXTRAÇÃO:
       1. Extraia apenas informações factuais presentes no currículo - não invente ou alucine informações
       2. Para informações ausentes, use null ou array vazio [] conforme apropriado
       3. Para datas, use o formato AAAA-MM se disponível, ou estime o ano se apenas informações parciais forem fornecidas
       4. Para períodos de experiência onde a data final é "presente", "atual", "até o momento", etc., use "present" como valor
-      5. Limite descrições a 300 caracteres no máximo
+      5. Limite descrições e resumos a no máximo 300 caracteres
       6. Seja preciso e foque em informações chave
-      7. Crie um objetivo profissional conciso baseado no conteúdo do currículo
-      8. Extraia detalhes ricos para a seção marketExperience que serão usados para tooltips
-      
+      7. Crie um resumo profissional de 3-5 linhas, focando em experiência, especialização, valor único, conquistas quantificáveis e palavras-chave relevantes para a posição almejada
+      8. Separe competências técnicas (hard skills) e comportamentais (soft skills), até 12 itens, indicando nível de proficiência e alinhamento com palavras-chave de ATS
+      9. Experiência profissional deve estar em ordem cronológica reversa, cada posição com: Cargo, Empresa, Período, Localização, breve descrição (1-2 linhas), 3-5 bullets de realizações quantificáveis (%, $, tempo), verbos de ação e impacto no negócio
+      10. Formação acadêmica: apenas ensino superior, instituição, curso, ano de conclusão, especializações relevantes, GPA/notas apenas se excepcionais
+      11. Seção de diferenciação: escolha UMA ou DUAS das opções mais relevantes entre projetos, certificações, publicações/pesquisas, prêmios, idiomas (com nível), voluntariado, palestras/eventos
+      12. Elemento final: gere um campo para QR code/link de portfólio ou LinkedIn, menção de disponibilidade para entrevistas, e referências disponíveis sob solicitação
+      13. Para foto profissional, só preencha se houver no currículo
+
       ESTRUTURA DE SAÍDA REQUERIDA:
       {
         "personalInfo": {
           "name": "Nome completo do candidato",
+          "title": "Título profissional específico (não genérico)",
           "contact": {
             "email": "Endereço de email",
             "phone": "Número de telefone (com código de país se presente)",
-            "location": "Cidade, Estado/Província, País ou localização geográfica"
-          }
+            "linkedin": "URL do LinkedIn (se houver)",
+            "location": "Cidade, Estado/País"
+          },
+          "photoUrl": "URL da foto profissional (opcional)"
         },
-        "objective": {
-          "summary": "Resumo conciso dos objetivos profissionais do candidato (1-2 frases)"
+        "professionalSummary": {
+          "summary": "Resumo de 3-5 linhas conforme instruções"
+        },
+        "skills": {
+          "technical": [{ "name": "Habilidade técnica", "level": "básico|intermediário|avançado|especialista" }],
+          "interpersonal": [{ "name": "Competência comportamental", "level": "básico|intermediário|avançado|especialista" }],
+          "tools": [{ "name": "Ferramenta/Tecnologia", "level": "básico|intermediário|avançado|especialista" }]
         },
         "experience": [
           {
             "company": "Nome da empresa",
             "role": "Cargo ou posição",
-            "period": {
-              "start": "AAAA-MM", 
-              "end": "AAAA-MM ou 'present'"
-            },
-            "description": "Breve descrição do trabalho (max 300 caracteres)",
-            "achievements": ["Conquista notável 1", "Conquista notável 2", "..."]
+            "period": { "start": "AAAA-MM", "end": "AAAA-MM ou 'present'" },
+            "location": "Cidade, País",
+            "description": "Breve descrição da função (1-2 linhas)",
+            "achievements": ["Realização quantificável 1", "Realização 2", ...]
           }
         ],
         "education": [
           {
             "institution": "Nome da Escola/Universidade",
-            "degree": "Tipo de grau (ex: Bacharelado, Mestrado, Doutorado)",
-            "field": "Campo de estudo ou especialização",
-            "period": {
-              "start": "AAAA-MM",
-              "end": "AAAA-MM ou 'present'"
-            }
+            "degree": "Curso ou grau acadêmico",
+            "field": "Área de estudo",
+            "year": "Ano de conclusão",
+            "gpa": "GPA/Nota (opcional, só se relevante)",
+            "specialization": "Especialização relevante (opcional)"
           }
         ],
-        "skills": {
-          "technical": [
-            {"name": "Nome da habilidade técnica", "level": "básico|intermediário|avançado|especialista"}
-          ],
-          "interpersonal": [
-            {"name": "Nome da soft skill", "level": "básico|intermediário|avançado|especialista"}
-          ],
-          "tools": [
-            {"name": "Nome da ferramenta ou software", "level": "básico|intermediário|avançado|especialista"}
-          ]
-        },
-        "certifications": [
+        "differentiation": [
           {
-            "name": "Nome da certificação",
-            "issuer": "Organização emissora",
-            "date": "AAAA-MM",
-            "expirationDate": "AAAA-MM ou null se não aplicável"
+            "type": "projeto|certificação|publicação|prêmio|idioma|voluntariado|palestra",
+            "title": "Título ou nome do item",
+            "details": "Detalhes relevantes (ex: nível idioma, nome prêmio, etc.)"
           }
         ],
-        "languages": [
-          {
-            "name": "Nome do idioma",
-            "level": "básico|intermediário|avançado|fluente|nativo"
-          }
-        ],
-        "marketExperience": {
-          "details": [
-            {
-              "company": "Nome da empresa",
-              "extendedDescription": "Descrição detalhada da experiência para tooltips e displays expandidos",
-              "keywords": "palavras-chave,separadas,por,vírgula"
-            }
-          ]
+        "finalElement": {
+          "qrCodeUrl": "URL para portfólio digital ou LinkedIn (se houver)",
+          "availability": "Disponibilidade para entrevistas (ex: imediata)",
+          "references": "Referências disponíveis sob solicitação"
         }
       }
-      
-      DIRETRIZES ADICIONAIS:
-      - Se você puder inferir o nível de habilidade, mas ele não estiver explicitamente declarado, faça uma estimativa razoável baseada no contexto
-      - Para idiomas, use "básico", "intermediário", "avançado", "fluente", ou "nativo"
-      - Para habilidades técnicas e interpessoais, use "básico", "intermediário", "avançado", ou "especialista"
-      - Se o currículo não estiver em português, você pode usar equivalentes em inglês para níveis de habilidade e normalizar para português na saída final
-      - Priorize extrair todas as informações disponíveis mesmo que o formato varie da estrutura esperada
-      - Se encontrar múltiplas experiências profissionais ou formações, liste todas em ordem cronológica (mais recente primeiro)
-      - Para habilidades técnicas, categorize apropriadamente entre technical, interpersonal e tools
-      - O campo marketExperience deve conter descrições mais completas e ricas das experiências profissionais, para uso em tooltips e visualizações expandidas
-      - Se não conseguir extrair um objetivo profissional explícito, crie um breve resumo (1-2 frases) baseado na experiência e qualificações
-      
-      Por favor, retorne APENAS a estrutura JSON sem comentários ou explicações adicionais. Assegure que o JSON seja válido e não tenha erros de sintaxe.
     `;
 
     console.log('[analyzeResume] Enviando solicitação para OpenAI');
